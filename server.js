@@ -1,14 +1,23 @@
+// Tệp: backend/server.js
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const { Trainer, Client } = require('./models');
+// Đã bổ sung đầy đủ cả 3 bảng: Trainer, Client, DailySession
+const { Trainer, Client, DailySession } = require('./models');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const MONGO_URI = process.env.MONGO_URI;
+// Tự động lấy MONGO_URI trên Render hoặc dùng link Atlas của bạn
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://lntraining:Lntraining2026@cluster0.sla3zqa.mongodb.net/pt_schedule_db?retryWrites=true&w=majority';
+
+// Mở kết nối tới MongoDB Atlas
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('Đã kết nối MongoDB Atlas thành công!'))
+  .catch(err => console.error('Lỗi kết nối MongoDB:', err));
+
 // Hàm quy đổi ngày YYYY-MM-DD sang Thứ trong tuần (2 = Thứ 2 ... 8 = Chủ Nhật)
 function getDayOfWeekNumber(dateStr) {
   const [year, month, day] = dateStr.split('-').map(Number);
@@ -44,21 +53,29 @@ async function buildSessionsFromWeekly(date, dayOfWeek) {
 
 // 1. Lấy danh sách PT và Khách hàng
 app.get('/api/init', async (req, res) => {
-  const trainers = await Trainer.find();
-  const clients = await Client.find().populate('primaryTrainerId');
-  res.json({ trainers, clients });
+  try {
+    const trainers = await Trainer.find();
+    const clients = await Client.find().populate('primaryTrainerId');
+    res.json({ trainers, clients });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 2. Lấy lịch theo ngày (Nếu chưa có thì tự động lấy từ lịch tuần sang)
 app.post('/api/daily-schedule', async (req, res) => {
-  const { date } = req.body;
-  const dayOfWeek = getDayOfWeekNumber(date);
-  let sessions = await DailySession.find({ date });
+  try {
+    const { date } = req.body;
+    const dayOfWeek = getDayOfWeekNumber(date);
+    let sessions = await DailySession.find({ date });
 
-  if (sessions.length === 0) {
-    sessions = await buildSessionsFromWeekly(date, dayOfWeek);
+    if (sessions.length === 0) {
+      sessions = await buildSessionsFromWeekly(date, dayOfWeek);
+    }
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  res.json(sessions);
 });
 
 // 3. Xếp lại toàn bộ lịch ngày từ Lịch Tuần (Reset & Đồng bộ lại)
@@ -85,7 +102,6 @@ app.post('/api/daily-session/add', async (req, res) => {
     status: 'SCHEDULED'
   });
 
-  // Nếu chọn lưu cố định vào lịch tuần cho khách đã có trong danh sách
   if (saveToWeekly && clientId) {
     const client = await Client.findById(clientId);
     if (client) {
@@ -115,7 +131,6 @@ app.put('/api/daily-session/:id/reschedule', async (req, res) => {
   if (status) session.status = status;
   await session.save();
 
-  // Nếu người dùng chọn "Cập nhật cố định cho cả Lịch Tuần"
   if (updateScope === 'WEEKLY' && session.clientId) {
     const client = await Client.findById(session.clientId);
     if (client) {
@@ -143,7 +158,7 @@ app.delete('/api/daily-session/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// 7. Đánh dấu PT nghỉ phép (OFF) trong ngày (Giống cột Anh Đạt trên bảng)
+// 7. Đánh dấu PT nghỉ phép (OFF) trong ngày
 app.post('/api/daily-schedule/toggle-off', async (req, res) => {
   const { date, trainerId } = req.body;
   const dayOfWeek = getDayOfWeekNumber(date);
@@ -159,7 +174,7 @@ app.post('/api/daily-schedule/toggle-off', async (req, res) => {
       trainerId,
       clientName: 'OFF',
       time: '',
-      status: 'CANCELLED' // Để dòng Chốt ca tự động tính bằng 0
+      status: 'CANCELLED'
     });
   }
 
@@ -167,7 +182,7 @@ app.post('/api/daily-schedule/toggle-off', async (req, res) => {
   res.json(sessions);
 });
 
-// 8. Quản lý Khách hàng & Lịch cố định theo tuần (Thêm / Sửa lịch tuần)
+// 8. Quản lý Khách hàng & Lịch cố định theo tuần
 app.post('/api/clients', async (req, res) => {
   const newClient = await Client.create(req.body);
   const populated = await Client.findById(newClient._id).populate('primaryTrainerId');
@@ -194,7 +209,7 @@ app.post('/api/daily-schedule/close', async (req, res) => {
   res.json(sessions);
 });
 
-// 10. Mở khóa lại ngày đã chốt (Để xếp lại lịch khi cần chỉnh sửa)
+// 10. Mở khóa lại ngày đã chốt
 app.post('/api/daily-schedule/reopen', async (req, res) => {
   const { date } = req.body;
   await DailySession.updateMany(
@@ -236,4 +251,5 @@ app.get('/api/weekly-summary', async (req, res) => {
   res.json(summary);
 });
 
-app.listen(5000, () => console.log('Server đang chạy tại http://localhost:5000'));
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server đang chạy tại cổng ${PORT}`));
