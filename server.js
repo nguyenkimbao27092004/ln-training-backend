@@ -251,5 +251,24 @@ app.get('/api/weekly-summary', async (req, res) => {
   res.json(summary);
 });
 
+// API xóa dữ liệu chốt ca theo tháng (từ startDate đến endDate)
+app.post('/api/daily-schedule/clear-range', async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Thiếu ngày bắt đầu hoặc ngày kết thúc' });
+    }
+    const result = await DailySession.deleteMany({
+      date: { $gte: startDate, $lte: endDate }
+    });
+    res.json({
+      success: true,
+      deletedCount: result.deletedCount
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server đang chạy tại cổng ${PORT}`));
