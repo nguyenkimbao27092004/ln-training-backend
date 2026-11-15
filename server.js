@@ -3,29 +3,35 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-// Đã bổ sung đầy đủ cả 3 bảng: Trainer, Client, DailySession
 const { Trainer, Client, DailySession } = require('./models');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Tự động lấy MONGO_URI trên Render hoặc dùng link Atlas của bạn
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://lntraining:Lntraining2026@cluster0.sla3zqa.mongodb.net/pt_schedule_db?retryWrites=true&w=majority';
 
-// Mở kết nối tới MongoDB Atlas
 mongoose.connect(MONGO_URI)
   .then(() => console.log('Đã kết nối MongoDB Atlas thành công!'))
   .catch(err => console.error('Lỗi kết nối MongoDB:', err));
 
-// Hàm quy đổi ngày YYYY-MM-DD sang Thứ trong tuần (2 = Thứ 2 ... 8 = Chủ Nhật)
+// Schema Tài Khoản Người Dùng (Phân quyền Admin & PT)
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  name: { type: String, required: true },
+  role: { type: String, enum: ['ADMIN', 'PT'], default: 'PT' },
+  trainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Trainer', default: null }
+}, { timestamps: true });
+
+const User = mongoose.models.User || mongoose.model('User', userSchema);
+
 function getDayOfWeekNumber(dateStr) {
   const [year, month, day] = dateStr.split('-').map(Number);
   const jsDay = new Date(year, month - 1, day).getDay();
   return jsDay === 0 ? 8 : jsDay + 1;
 }
 
-// Hàm tạo danh sách ca tập trong ngày từ lịch cố định theo tuần
 async function buildSessionsFromWeekly(date, dayOfWeek) {
   const activeClients = await Client.find({
     status: 'ACTIVE',
@@ -51,7 +57,84 @@ async function buildSessionsFromWeekly(date, dayOfWeek) {
   return newSessions.length > 0 ? await DailySession.insertMany(newSessions) : [];
 }
 
-// 1. Lấy danh sách PT và Khách hàng
+// ==================== AUTHENTICATION (ĐĂNG NHẬP & ĐĂNG KÝ) ====================
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tài khoản và mật khẩu' });
+    }
+
+    if (username.trim().toLowerCase() === 'dinhle' && password === 'dinhle123') {
+      return res.json({
+        user: {
+          username: 'dinhle',
+          name: 'Admin Định Lê',
+          role: 'ADMIN'
+        }
+      });
+    }
+
+    const user = await User.findOne({ username: username.trim().toLowerCase() });
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'Tài khoản hoặc mật khẩu không chính xác' });
+    }
+
+    res.json({
+      user: {
+        _id: user._id,
+        username: user.username,
+        name: user.name,
+        role: user.role,
+        trainerId: user.trainerId
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { username, password, name, trainerId } = req.body;
+    if (!username || !password || !name) {
+      return res.status(400).json({ error: 'Vui lòng điền đầy đủ thông tin' });
+    }
+
+    const cleanUsername = username.trim().toLowerCase();
+    if (cleanUsername === 'dinhle') {
+      return res.status(400).json({ error: 'Tên tài khoản này đã được bảo lưu cho Admin' });
+    }
+
+    const existing = await User.findOne({ username: cleanUsername });
+    if (existing) {
+      return res.status(400).json({ error: 'Tên tài khoản đã tồn tại, vui lòng chọn tên khác' });
+    }
+
+    const newUser = await User.create({
+      username: cleanUsername,
+      password,
+      name: name.trim(),
+      role: 'PT',
+      trainerId: trainerId || null
+    });
+
+    res.json({
+      message: 'Đăng ký tài khoản PT thành công',
+      user: {
+        _id: newUser._id,
+        username: newUser.username,
+        name: newUser.name,
+        role: newUser.role,
+        trainerId: newUser.trainerId
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== CÁC API QUẢN LÝ LỊCH & KHÁCH HÀNG ====================
 app.get('/api/init', async (req, res) => {
   try {
     const trainers = await Trainer.find();
@@ -62,7 +145,6 @@ app.get('/api/init', async (req, res) => {
   }
 });
 
-// 2. Lấy lịch theo ngày (Nếu chưa có thì tự động lấy từ lịch tuần sang)
 app.post('/api/daily-schedule', async (req, res) => {
   try {
     const { date } = req.body;
@@ -78,7 +160,6 @@ app.post('/api/daily-schedule', async (req, res) => {
   }
 });
 
-// 3. Xếp lại toàn bộ lịch ngày từ Lịch Tuần (Reset & Đồng bộ lại)
 app.post('/api/daily-schedule/resync', async (req, res) => {
   const { date } = req.body;
   const dayOfWeek = getDayOfWeekNumber(date);
@@ -87,7 +168,6 @@ app.post('/api/daily-schedule/resync', async (req, res) => {
   res.json(sessions);
 });
 
-// 4. Thêm nhanh 1 ca tập trong ngày (Và tùy chọn lưu luôn vào lịch tuần)
 app.post('/api/daily-session/add', async (req, res) => {
   const { date, trainerId, clientId, clientName, time, saveToWeekly } = req.body;
   const dayOfWeek = getDayOfWeekNumber(date);
@@ -119,7 +199,6 @@ app.post('/api/daily-session/add', async (req, res) => {
   res.json(session);
 });
 
-// 5. Xếp lại 1 ca tập (Cập nhật theo Ngày hoặc cập nhật cả Lịch Tuần)
 app.put('/api/daily-session/:id/reschedule', async (req, res) => {
   const { trainerId, time, clientName, status, updateScope } = req.body;
   const session = await DailySession.findById(req.params.id);
@@ -152,13 +231,11 @@ app.put('/api/daily-session/:id/reschedule', async (req, res) => {
   res.json(session);
 });
 
-// 6. Xóa 1 ca tập khỏi bảng lịch ngày
 app.delete('/api/daily-session/:id', async (req, res) => {
   await DailySession.findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
 
-// 7. Đánh dấu PT nghỉ phép (OFF) trong ngày
 app.post('/api/daily-schedule/toggle-off', async (req, res) => {
   const { date, trainerId } = req.body;
   const dayOfWeek = getDayOfWeekNumber(date);
@@ -182,7 +259,6 @@ app.post('/api/daily-schedule/toggle-off', async (req, res) => {
   res.json(sessions);
 });
 
-// 8. Quản lý Khách hàng & Lịch cố định theo tuần
 app.post('/api/clients', async (req, res) => {
   const newClient = await Client.create(req.body);
   const populated = await Client.findById(newClient._id).populate('primaryTrainerId');
@@ -194,7 +270,34 @@ app.put('/api/clients/:id', async (req, res) => {
   res.json(updated);
 });
 
-// 9. Chốt ca cuối ngày
+// Chuyển toàn bộ khách hàng sang trạng thái Tạm nghỉ (PAUSED / OFF)
+app.post('/api/clients/pause-all', async (req, res) => {
+  try {
+    const result = await Client.updateMany(
+      {},
+      { $set: { status: 'PAUSED' } }
+    );
+    const clients = await Client.find().populate('primaryTrainerId');
+    res.json({
+      success: true,
+      message: `Đã chuyển toàn bộ ${result.modifiedCount} khách hàng sang trạng thái Tạm nghỉ (OFF)!`,
+      clients
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Xóa vĩnh viễn 1 khách hàng
+app.delete('/api/clients/:id', async (req, res) => {
+  try {
+    await Client.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Đã xóa khách hàng thành công' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/daily-schedule/close', async (req, res) => {
   const { date } = req.body;
   await DailySession.updateMany(
@@ -209,7 +312,6 @@ app.post('/api/daily-schedule/close', async (req, res) => {
   res.json(sessions);
 });
 
-// 10. Mở khóa lại ngày đã chốt
 app.post('/api/daily-schedule/reopen', async (req, res) => {
   const { date } = req.body;
   await DailySession.updateMany(
@@ -224,7 +326,6 @@ app.post('/api/daily-schedule/reopen', async (req, res) => {
   res.json(sessions);
 });
 
-// 11. Tổng hợp ca làm việc của PT cuối tuần / tháng (Tính ca đôi = 1 ca và đếm số lượng ca đôi)
 app.get('/api/weekly-summary', async (req, res) => {
   const { startDate, endDate } = req.query;
   const summary = await DailySession.aggregate([
@@ -267,7 +368,6 @@ app.get('/api/weekly-summary', async (req, res) => {
   res.json(summary);
 });
 
-// API xóa dữ liệu chốt ca theo tháng (từ startDate đến endDate)
 app.post('/api/daily-schedule/clear-range', async (req, res) => {
   try {
     const { startDate, endDate } = req.body;
