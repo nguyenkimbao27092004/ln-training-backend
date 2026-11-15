@@ -224,7 +224,7 @@ app.post('/api/daily-schedule/reopen', async (req, res) => {
   res.json(sessions);
 });
 
-// 11. Tổng hợp ca làm việc của PT cuối tuần
+// 11. Tổng hợp ca làm việc của PT cuối tuần / tháng (Tính ca đôi = 1 ca và đếm số lượng ca đôi)
 app.get('/api/weekly-summary', async (req, res) => {
   const { startDate, endDate } = req.query;
   const summary = await DailySession.aggregate([
@@ -237,14 +237,30 @@ app.get('/api/weekly-summary', async (req, res) => {
     {
       $group: {
         _id: { trainerId: '$trainerId', date: '$date' },
-        dailyCount: { $sum: 1 }
+        dailyCount: { $sum: 1 },
+        doubleCount: {
+          $sum: {
+            $cond: [
+              { $regexMatch: { input: { $ifNull: ['$clientName', ''] }, regex: /\[CA ĐÔI\]/i } },
+              1,
+              0
+            ]
+          }
+        }
       }
     },
     {
       $group: {
         _id: '$_id.trainerId',
         totalShifts: { $sum: '$dailyCount' },
-        dailyBreakdown: { $push: { date: '$_id.date', count: '$dailyCount' } }
+        totalDoubleShifts: { $sum: '$doubleCount' },
+        dailyBreakdown: {
+          $push: {
+            date: '$_id.date',
+            count: '$dailyCount',
+            doubleCount: '$doubleCount'
+          }
+        }
       }
     }
   ]);
