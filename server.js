@@ -15,16 +15,20 @@ mongoose.connect(MONGO_URI)
   .then(() => console.log('Đã kết nối MongoDB Atlas thành công!'))
   .catch(err => console.error('Lỗi kết nối MongoDB:', err));
 
-// ==================== TỰ ĐỘNG BỔ SUNG TRƯỜNG SĐT & BÀI TẬP VÀO SCHEMA ====================
+// ==================== BỔ SUNG TRƯỜNG SĐT & BÀI TẬP VÀO SCHEMA & PROTOTYPE ====================
+Client.schema.set('strict', false);
+DailySession.schema.set('strict', false);
+
 if (!Client.schema.path('phone')) {
   Client.schema.add({ phone: { type: String, default: '' } });
 }
 const weeklySubSchema = Client.schema.path('weeklySchedule')?.schema;
 if (weeklySubSchema) {
+  weeklySubSchema.set('strict', false);
   if (!weeklySubSchema.path('workoutType')) {
     weeklySubSchema.add({
-      workoutType: { type: String, default: '' }, // VD: Thân trên, Thân dưới...
-      workoutNote: { type: String, default: '' }  // Chi tiết bài tập
+      workoutType: { type: String, default: '' },
+      workoutNote: { type: String, default: '' }
     });
   }
 }
@@ -53,14 +57,15 @@ function getDayOfWeekNumber(dateStr) {
 }
 
 async function buildSessionsFromWeekly(date, dayOfWeek) {
+  // Dùng .lean() để lấy đầy đủ workoutType và workoutNote trực tiếp từ MongoDB
   const activeClients = await Client.find({
     status: 'ACTIVE',
     'weeklySchedule.dayOfWeek': dayOfWeek
-  });
+  }).lean();
 
   const newSessions = [];
   activeClients.forEach(client => {
-    const slot = client.weeklySchedule.find(s => s.dayOfWeek === dayOfWeek);
+    const slot = (client.weeklySchedule || []).find(s => s.dayOfWeek === dayOfWeek);
     if (slot) {
       newSessions.push({
         date,
@@ -156,23 +161,29 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// ĐĂNG NHẬP DÀNH RIÊNG CHO KHÁCH HÀNG BẰNG SỐ ĐIỆN THOẠI
+// ĐĂNG NHẬP DÀNH RIÊNG CHO KHÁCH HÀNG BẰNG SỐ ĐIỆN THOẠI (DÙNG .lean() ĐỂ ĐỌC TRỰC TIẾP TỪ MONGODB)
 app.post('/api/auth/client-login', async (req, res) => {
   try {
     const { phone } = req.body;
-    if (!phone || !phone.trim()) {
+    if (!phone || !String(phone).trim()) {
       return res.status(400).json({ error: 'Vui lòng nhập số điện thoại của bạn' });
     }
 
-    const cleanPhone = phone.replace(/\D/g, '');
-    if (!cleanPhone) {
-      return res.status(400).json({ error: 'Số điện thoại không hợp lệ' });
-    }
+    const cleanInput = String(phone).trim();
+    const digitsInput = cleanInput.replace(/\D/g, '');
 
-    const allClients = await Client.find().populate('primaryTrainerId');
-    const matchedClient = allClients.find(
-      c => c.phone && c.phone.replace(/\D/g, '') === cleanPhone
-    );
+    // .lean() giúp lấy nguyên vẹn trường phone và weeklySchedule từ MongoDB
+    const allClients = await Client.find().populate('primaryTrainerId').lean();
+
+    const matchedClient = allClients.find(c => {
+      const dbPhone = String(c.phone || '').trim();
+      if (!dbPhone) return false;
+      const dbDigits = dbPhone.replace(/\D/g, '');
+      if (digitsInput && dbDigits) {
+        return dbDigits === digitsInput;
+      }
+      return dbPhone.toLowerCase() === cleanInput.toLowerCase();
+    });
 
     if (!matchedClient) {
       return res.status(404).json({
@@ -180,13 +191,17 @@ app.post('/api/auth/client-login', async (req, res) => {
       });
     }
 
-    const trainers = await Trainer.find();
+    const trainers = await Trainer.find().lean();
+    const escapedName = matchedClient.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const recentSessions = await DailySession.find({
       $or: [
         { clientId: matchedClient._id },
-        { clientName: { $regex: matchedClient.name.trim(), $options: 'i' } }
+        { clientName: { $regex: escapedName, $options: 'i' } }
       ]
-    }).sort({ date: -1 }).limit(30);
+    })
+      .sort({ date: -1 })
+      .limit(30)
+      .lean();
 
     res.json({
       client: matchedClient,
@@ -201,8 +216,8 @@ app.post('/api/auth/client-login', async (req, res) => {
 // ==================== CÁC API QUẢN LÝ LỊCH & KHÁCH HÀNG ====================
 app.get('/api/init', async (req, res) => {
   try {
-    const trainers = await Trainer.find();
-    const clients = await Client.find().populate('primaryTrainerId');
+    const trainers = await Trainer.find().lean();
+    const clients = await Client.find().populate('primaryTrainerId').lean();
     res.json({ trainers, clients });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -213,7 +228,7 @@ app.post('/api/daily-schedule', async (req, res) => {
   try {
     const { date } = req.body;
     const dayOfWeek = getDayOfWeekNumber(date);
-    let sessions = await DailySession.find({ date });
+    let sessions = await DailySession.find({ date }).lean();
 
     if (sessions.length === 0) {
       sessions = await buildSessionsFromWeekly(date, dayOfWeek);
@@ -249,16 +264,20 @@ app.post('/api/daily-session/add', async (req, res) => {
   });
 
   if (saveToWeekly && clientId) {
-    const client = await Client.findById(clientId);
+    const client = await Client.findById(clientId).lean();
     if (client) {
-      const existingIdx = client.weeklySchedule.findIndex(s => s.dayOfWeek === dayOfWeek);
+      const schedule = Array.isArray(client.weeklySchedule) ? [...client.weeklySchedule] : [];
+      const existingIdx = schedule.findIndex(s => s.dayOfWeek === dayOfWeek);
       if (existingIdx >= 0) {
-        client.weeklySchedule[existingIdx].time = time;
-        client.weeklySchedule[existingIdx].assignedTrainerId = trainerId;
-        if (workoutType !== undefined) client.weeklySchedule[existingIdx].workoutType = workoutType;
-        if (workoutNote !== undefined) client.weeklySchedule[existingIdx].workoutNote = workoutNote;
+        schedule[existingIdx] = {
+          ...schedule[existingIdx],
+          time,
+          assignedTrainerId: trainerId,
+          workoutType: workoutType !== undefined ? workoutType : (schedule[existingIdx].workoutType || ''),
+          workoutNote: workoutNote !== undefined ? workoutNote : (schedule[existingIdx].workoutNote || '')
+        };
       } else {
-        client.weeklySchedule.push({
+        schedule.push({
           dayOfWeek,
           time,
           assignedTrainerId: trainerId,
@@ -266,7 +285,7 @@ app.post('/api/daily-session/add', async (req, res) => {
           workoutNote: workoutNote || ''
         });
       }
-      await client.save();
+      await Client.findByIdAndUpdate(clientId, { $set: { weeklySchedule: schedule } });
     }
   }
 
@@ -275,28 +294,37 @@ app.post('/api/daily-session/add', async (req, res) => {
 
 app.put('/api/daily-session/:id/reschedule', async (req, res) => {
   const { trainerId, time, clientName, status, updateScope, workoutType, workoutNote } = req.body;
-  const session = await DailySession.findById(req.params.id);
+  const updateFields = {};
+  if (trainerId) updateFields.trainerId = trainerId;
+  if (time !== undefined) updateFields.time = time;
+  if (clientName) updateFields.clientName = clientName;
+  if (status) updateFields.status = status;
+  if (workoutType !== undefined) updateFields.workoutType = workoutType;
+  if (workoutNote !== undefined) updateFields.workoutNote = workoutNote;
+
+  const session = await DailySession.findByIdAndUpdate(
+    req.params.id,
+    { $set: updateFields },
+    { new: true }
+  ).lean();
+
   if (!session) return res.status(404).json({ message: 'Không tìm thấy ca tập' });
 
-  if (trainerId) session.trainerId = trainerId;
-  if (time !== undefined) session.time = time;
-  if (clientName) session.clientName = clientName;
-  if (status) session.status = status;
-  if (workoutType !== undefined) session.workoutType = workoutType;
-  if (workoutNote !== undefined) session.workoutNote = workoutNote;
-  await session.save();
-
   if (updateScope === 'WEEKLY' && session.clientId) {
-    const client = await Client.findById(session.clientId);
+    const client = await Client.findById(session.clientId).lean();
     if (client) {
-      const slot = client.weeklySchedule.find(s => s.dayOfWeek === session.dayOfWeek);
-      if (slot) {
-        slot.time = session.time;
-        slot.assignedTrainerId = session.trainerId;
-        if (workoutType !== undefined) slot.workoutType = workoutType;
-        if (workoutNote !== undefined) slot.workoutNote = workoutNote;
+      const schedule = Array.isArray(client.weeklySchedule) ? [...client.weeklySchedule] : [];
+      const idx = schedule.findIndex(s => s.dayOfWeek === session.dayOfWeek);
+      if (idx >= 0) {
+        schedule[idx] = {
+          ...schedule[idx],
+          time: session.time,
+          assignedTrainerId: session.trainerId,
+          workoutType: workoutType !== undefined ? workoutType : (schedule[idx].workoutType || ''),
+          workoutNote: workoutNote !== undefined ? workoutNote : (schedule[idx].workoutNote || '')
+        };
       } else {
-        client.weeklySchedule.push({
+        schedule.push({
           dayOfWeek: session.dayOfWeek,
           time: session.time,
           assignedTrainerId: session.trainerId,
@@ -304,7 +332,7 @@ app.put('/api/daily-session/:id/reschedule', async (req, res) => {
           workoutNote: workoutNote || ''
         });
       }
-      await client.save();
+      await Client.findByIdAndUpdate(session.clientId, { $set: { weeklySchedule: schedule } });
     }
   }
 
@@ -315,21 +343,31 @@ app.put('/api/daily-session/:id/reschedule', async (req, res) => {
 app.put('/api/daily-session/:id/workout', async (req, res) => {
   try {
     const { workoutType, workoutNote, saveToWeekly } = req.body;
-    const session = await DailySession.findById(req.params.id);
+    const session = await DailySession.findByIdAndUpdate(
+      req.params.id,
+      {
+        $set: {
+          workoutType: workoutType || '',
+          workoutNote: workoutNote || ''
+        }
+      },
+      { new: true }
+    ).lean();
+
     if (!session) return res.status(404).json({ error: 'Không tìm thấy ca tập' });
 
-    session.workoutType = workoutType || '';
-    session.workoutNote = workoutNote || '';
-    await session.save();
-
     if (saveToWeekly && session.clientId) {
-      const client = await Client.findById(session.clientId);
+      const client = await Client.findById(session.clientId).lean();
       if (client) {
-        const slot = client.weeklySchedule.find(s => s.dayOfWeek === session.dayOfWeek);
-        if (slot) {
-          slot.workoutType = workoutType || '';
-          slot.workoutNote = workoutNote || '';
-          await client.save();
+        const schedule = Array.isArray(client.weeklySchedule) ? [...client.weeklySchedule] : [];
+        const idx = schedule.findIndex(s => s.dayOfWeek === session.dayOfWeek);
+        if (idx >= 0) {
+          schedule[idx] = {
+            ...schedule[idx],
+            workoutType: workoutType || '',
+            workoutNote: workoutNote || ''
+          };
+          await Client.findByIdAndUpdate(session.clientId, { $set: { weeklySchedule: schedule } });
         }
       }
     }
@@ -364,29 +402,32 @@ app.post('/api/daily-schedule/toggle-off', async (req, res) => {
     });
   }
 
-  const sessions = await DailySession.find({ date });
+  const sessions = await DailySession.find({ date }).lean();
   res.json(sessions);
 });
 
 app.post('/api/clients', async (req, res) => {
   const newClient = await Client.create(req.body);
-  const populated = await Client.findById(newClient._id).populate('primaryTrainerId');
+  const populated = await Client.findById(newClient._id).populate('primaryTrainerId').lean();
   res.json(populated);
 });
 
 app.put('/api/clients/:id', async (req, res) => {
-  const updated = await Client.findByIdAndUpdate(req.params.id, req.body, { new: true }).populate('primaryTrainerId');
+  const updated = await Client.findByIdAndUpdate(
+    req.params.id,
+    { $set: req.body },
+    { new: true }
+  ).populate('primaryTrainerId').lean();
   res.json(updated);
 });
 
-// Chuyển toàn bộ khách hàng sang trạng thái Tạm nghỉ (PAUSED / OFF)
 app.post('/api/clients/pause-all', async (req, res) => {
   try {
     const result = await Client.updateMany(
       {},
       { $set: { status: 'PAUSED' } }
     );
-    const clients = await Client.find().populate('primaryTrainerId');
+    const clients = await Client.find().populate('primaryTrainerId').lean();
     res.json({
       success: true,
       message: `Đã chuyển toàn bộ ${result.modifiedCount} khách hàng sang trạng thái Tạm nghỉ (OFF)!`,
@@ -397,7 +438,6 @@ app.post('/api/clients/pause-all', async (req, res) => {
   }
 });
 
-// Xóa vĩnh viễn 1 khách hàng
 app.delete('/api/clients/:id', async (req, res) => {
   try {
     await Client.findByIdAndDelete(req.params.id);
@@ -417,7 +457,7 @@ app.post('/api/daily-schedule/close', async (req, res) => {
     { date, status: 'CANCELLED' },
     { $set: { isLocked: true } }
   );
-  const sessions = await DailySession.find({ date });
+  const sessions = await DailySession.find({ date }).lean();
   res.json(sessions);
 });
 
@@ -431,7 +471,7 @@ app.post('/api/daily-schedule/reopen', async (req, res) => {
     { date, status: 'CANCELLED' },
     { $set: { isLocked: false } }
   );
-  const sessions = await DailySession.find({ date });
+  const sessions = await DailySession.find({ date }).lean();
   res.json(sessions);
 });
 
