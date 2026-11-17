@@ -123,9 +123,13 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, password, name, trainerId } = req.body;
-    if (!username || !password || !name) {
-      return res.status(400).json({ error: 'Vui lòng điền đầy đủ thông tin' });
+    const { username, password, name, trainerId, registerCode } = req.body;
+    if (!username || !password || !name || !registerCode) {
+      return res.status(400).json({ error: 'Vui lòng điền đầy đủ thông tin và mã xác nhận đăng ký PT' });
+    }
+
+    if (String(registerCode).trim().toLowerCase() !== 'dinhle') {
+      return res.status(403).json({ error: 'Mã xác nhận đăng ký PT không chính xác!' });
     }
 
     const cleanUsername = username.trim().toLowerCase();
@@ -161,7 +165,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// ĐĂNG NHẬP DÀNH RIÊNG CHO KHÁCH HÀNG BẰNG SỐ ĐIỆN THOẠI (DÙNG .lean() ĐỂ ĐỌC TRỰC TIẾP TỪ MONGODB)
+// ĐĂNG NHẬP DÀNH RIÊNG CHO KHÁCH HÀNG BẰNG SỐ ĐIỆN THOẠI HOẶC 4 SỐ CUỐI (DÙNG .lean() ĐỂ ĐỌC TRỰC TIẾP TỪ MONGODB)
 app.post('/api/auth/client-login', async (req, res) => {
   try {
     const { phone } = req.body;
@@ -175,7 +179,7 @@ app.post('/api/auth/client-login', async (req, res) => {
     // .lean() giúp lấy nguyên vẹn trường phone và weeklySchedule từ MongoDB
     const allClients = await Client.find().populate('primaryTrainerId').lean();
 
-    const matchedClient = allClients.find(c => {
+    let matchedClient = allClients.find(c => {
       const dbPhone = String(c.phone || '').trim();
       if (!dbPhone) return false;
       const dbDigits = dbPhone.replace(/\D/g, '');
@@ -184,6 +188,24 @@ app.post('/api/auth/client-login', async (req, res) => {
       }
       return dbPhone.toLowerCase() === cleanInput.toLowerCase();
     });
+
+    // Hỗ trợ đăng nhập bằng 4 số cuối của số điện thoại
+    if (!matchedClient && digitsInput.length >= 4) {
+      const suffixMatches = allClients.filter(c => {
+        const dbPhone = String(c.phone || '').trim();
+        if (!dbPhone) return false;
+        const dbDigits = dbPhone.replace(/\D/g, '');
+        return dbDigits && dbDigits.endsWith(digitsInput);
+      });
+
+      if (suffixMatches.length === 1) {
+        matchedClient = suffixMatches[0];
+      } else if (suffixMatches.length > 1) {
+        return res.status(400).json({
+          error: 'Có nhiều học viên có 4 số cuối giống nhau, vui lòng nhập đầy đủ số điện thoại của bạn!'
+        });
+      }
+    }
 
     if (!matchedClient) {
       return res.status(404).json({
