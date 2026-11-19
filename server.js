@@ -522,6 +522,9 @@ app.get('/api/weekly-summary', async (req, res) => {
       }
     },
     {
+      $sort: { '_id.date': 1 }
+    },
+    {
       $group: {
         _id: '$_id.trainerId',
         totalShifts: { $sum: '$dailyCount' },
