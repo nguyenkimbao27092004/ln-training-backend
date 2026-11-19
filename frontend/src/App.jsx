@@ -50,7 +50,7 @@ export default function App() {
 
   // State Form Đăng nhập & Đăng ký & Khách hàng
   const [authMode, setAuthMode] = useState('CLIENT'); // CLIENT | LOGIN | REGISTER
-  const [authForm, setAuthForm] = useState({ username: '', password: '', name: '', trainerId: '' });
+  const [authForm, setAuthForm] = useState({ username: '', password: '', name: '', trainerId: '', registerCode: '' });
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
@@ -103,6 +103,7 @@ export default function App() {
   const [startDate, setStartDate] = useState(weekRange.start);
   const [endDate, setEndDate] = useState(weekRange.end);
   const [weeklySummary, setWeeklySummary] = useState([]);
+  const [summaryViewMode, setSummaryViewMode] = useState('CARDS'); // CARDS | TABLE
 
   const isAdmin = currentUser?.role === 'ADMIN';
 
@@ -162,11 +163,17 @@ export default function App() {
         setCurrentUser(user);
         localStorage.setItem('gym_dinhle_user', JSON.stringify(user));
       } else if (authMode === 'REGISTER') {
+        if (authForm.registerCode.trim().toLowerCase() !== 'dinhle') {
+          setAuthError('Mã xác nhận đăng ký PT không chính xác!');
+          setAuthLoading(false);
+          return;
+        }
         const res = await axios.post(`${API_URL}/auth/register`, {
           username: authForm.username,
           password: authForm.password,
           name: authForm.name,
-          trainerId: authForm.trainerId || null
+          trainerId: authForm.trainerId || null,
+          registerCode: authForm.registerCode.trim()
         });
         const user = res.data.user;
         alert('Đăng ký tài khoản PT thành công! Bạn có thể xem lịch ngay.');
@@ -180,7 +187,7 @@ export default function App() {
     }
   };
 
-  // Xử lý Form Đăng nhập riêng cho Khách hàng bằng Số điện thoại
+  // Xử lý Form Đăng nhập riêng cho Khách hàng bằng Số điện thoại (hoặc 4 số cuối)
   const handleClientLoginSubmit = async (e) => {
     if (e) e.preventDefault();
     setAuthError('');
@@ -210,7 +217,7 @@ export default function App() {
     if (window.confirm('Bạn có chắc chắn muốn đăng xuất tài khoản?')) {
       setCurrentUser(null);
       localStorage.removeItem('gym_dinhle_user');
-      setAuthForm({ username: '', password: '', name: '', trainerId: '' });
+      setAuthForm({ username: '', password: '', name: '', trainerId: '', registerCode: '' });
       setAuthError('');
     }
   };
@@ -574,6 +581,9 @@ export default function App() {
     const activeTimeToday = todaySession?.time || todayWeeklySlot?.time || '';
     const activeTrainerToday = getTrainerName(todaySession?.trainerId || todayWeeklySlot?.assignedTrainerId);
 
+    // Lọc chỉ lấy những ca tập đã hoàn thành (COMPLETED) để hiển thị ở phần Nhật ký của khách hàng
+    const completedSessions = recentSessions.filter(s => s.status === 'COMPLETED');
+
     return (
       <div className="app-shell">
         <header className="ProHeader">
@@ -764,14 +774,14 @@ export default function App() {
             })}
           </div>
 
-          {/* CÁC BUỔI TẬP GẦN ĐÂY TRÊN LỊCH NGÀY (CÓ GHI CHÚ BÀI TẬP RIÊNG) */}
-          {recentSessions.length > 0 && (
+          {/* CÁC BUỔI TẬP GẦN ĐÂY TRÊN LỊCH NGÀY (CHỈ HIỂN THỊ NHỮNG CA ĐÃ HOÀN THÀNH) */}
+          {completedSessions.length > 0 && (
             <>
               <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', margin: '22px 0 10px' }}>
                 📝 Nhật Ký Các Buổi Tập Theo Ngày Của Bạn
               </h3>
               <div className="ClientCardsGrid" style={{ marginTop: 0 }}>
-                {recentSessions.map(s => (
+                {completedSessions.map(s => (
                   <div key={s._id} className="ClientItemCard">
                     <div className="ClientCardTop">
                       <strong style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -885,7 +895,7 @@ export default function App() {
                   lineHeight: 1.4
                 }}
               >
-                👋 <strong>Dành cho Học Viên Gym DinhLe:</strong> Chỉ cần nhập <strong>Số điện thoại</strong> của bạn để xem lịch tập trong tuần và hôm nay tập <strong>Thân trên hay Thân dưới</strong>.
+                👋 <strong>Dành cho Học Viên Gym DinhLe:</strong> Chỉ cần nhập <strong>số điện thoại (hoặc 4 số cuối)</strong> của bạn để xem lịch tập trong tuần <strong></strong>.
               </div>
 
               <label className="AuthLabel">
@@ -893,7 +903,7 @@ export default function App() {
                 <input
                   type="tel"
                   required
-                  placeholder="Nhập SĐT (VD: 0909123456)"
+                  placeholder="Nhập SĐT hoặc 4 số cuối"
                   value={clientPhoneInput}
                   onChange={e => setClientPhoneInput(e.target.value)}
                   className="AuthInput"
@@ -946,6 +956,20 @@ export default function App() {
                 />
               </label>
 
+              {authMode === 'REGISTER' && (
+                <label className="AuthLabel">
+                  <span>Mã xác nhận đăng ký PT:</span>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Nhập mã xác nhận"
+                    value={authForm.registerCode}
+                    onChange={e => setAuthForm({ ...authForm, registerCode: e.target.value })}
+                    className="AuthInput"
+                  />
+                </label>
+              )}
+
               <button type="submit" disabled={authLoading} className="AuthSubmitBtn">
                 {authLoading
                   ? 'Đang xử lý...'
@@ -983,15 +1007,18 @@ export default function App() {
 
   const pausedClientsCount = clients.filter(c => c.status === 'PAUSED').length;
 
-  // Tìm kiếm khách hàng bằng cả TÊN hoặc SỐ ĐIỆN THOẠI
+  // Tìm kiếm khách hàng bằng cả TÊN, SỐ ĐIỆN THOẠI hoặc 4 SỐ CUỐI
   const displayedClients = clients
     .filter(c => filterTrainer === 'ALL' || (c.primaryTrainerId?._id || c.primaryTrainerId) === filterTrainer)
     .filter(c => filterStatus === 'ALL' || c.status === filterStatus)
     .filter(c => {
       const q = searchClient.toLowerCase().trim();
       if (!q) return true;
+      const qDigits = q.replace(/\D/g, '');
+      const rawPhone = (c.phone || '').toLowerCase();
+      const phoneDigits = rawPhone.replace(/\D/g, '');
       const matchName = c.name.toLowerCase().includes(q);
-      const matchPhone = (c.phone || '').toLowerCase().includes(q);
+      const matchPhone = rawPhone.includes(q) || (qDigits.length > 0 && phoneDigits.includes(qDigits));
       return matchName || matchPhone;
     })
     .sort((a, b) => {
@@ -1004,6 +1031,42 @@ export default function App() {
     });
 
   const currentMonthInfo = getMonthRange(selectedMonth);
+
+  // Dữ liệu Tab 3: Sắp xếp chốt ca đúng thứ tự ngày tăng dần
+  const formatShortDate = (dateStr) => {
+    if (!dateStr || !dateStr.includes('-')) return dateStr || '';
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const jsDay = new Date(y, m - 1, d).getDay();
+    const dayLabel = jsDay === 0 ? 'CN' : `T${jsDay + 1}`;
+    return `${dayLabel}, ${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
+  };
+
+  const formatVNDate = (dateStr) => {
+    if (!dateStr || !dateStr.includes('-')) return dateStr || '';
+    const [y, m, d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
+  };
+
+  const summaryByTrainer = trainers.map(trainer => {
+    const item = weeklySummary.find(w => String(w._id) === String(trainer._id));
+    const sortedDays = [...(item?.dailyBreakdown || [])].sort((a, b) =>
+      (a.date || '').localeCompare(b.date || '')
+    );
+    return {
+      trainer,
+      totalShifts: item ? item.totalShifts : 0,
+      totalDoubleShifts: item?.totalDoubleShifts || 0,
+      dailyBreakdown: sortedDays
+    };
+  });
+
+  const grandTotalShifts = summaryByTrainer.reduce((sum, x) => sum + x.totalShifts, 0);
+  const grandTotalDouble = summaryByTrainer.reduce((sum, x) => sum + x.totalDoubleShifts, 0);
+  const activeTrainerCount = summaryByTrainer.filter(x => x.totalShifts > 0).length;
+  const maxTrainerShifts = Math.max(1, ...summaryByTrainer.map(x => x.totalShifts));
+  const allClosedDatesSorted = Array.from(
+    new Set(summaryByTrainer.flatMap(x => x.dailyBreakdown.map(d => d.date)))
+  ).sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="app-shell">
@@ -1146,74 +1209,87 @@ export default function App() {
 
           <div className="MainArea">
             <div className="BoardCard">
+              {/* BANNER TIÊU ĐỀ LỊCH NGÀY HIỆN ĐẠI */}
               <div className="BoardBanner">
-                <span className="BannerTitle">Lịch PT ({formatHeaderDate(selectedDate)})</span>
+                <div className="BannerTitleWrap">
+                  <span className="BannerIconBox">📅</span>
+                  <div>
+                    <div className="BannerTitle">Lịch PT — {formatHeaderDate(selectedDate)}</div>
+                    <div className="BannerSubHint">
+                      {isAdmin
+                        ? 'Kéo thả thẻ giữa các cột để đổi PT • Bấm vào thẻ để chỉnh sửa hoặc ghi bài tập'
+                        : 'Bấm vào từng ca tập để ghi nhóm cơ & giáo án cho học viên'}
+                    </div>
+                  </div>
+                </div>
 
                 <div className="BannerStats">
-                  <span className="StatPill" style={{ color: '#1d4ed8' }}>
-                    Tổng chốt: {totalValidShifts} ca
+                  <span className="StatPill pill-blue">
+                    Tổng chốt: <strong>{totalValidShifts} ca</strong>
                   </span>
                   {totalDoubleShiftsToday > 0 && (
-                    <span className="StatPill" style={{ color: '#6d28d9', background: '#ede9fe' }}>
-                      👥 Có {totalDoubleShiftsToday} ca đôi
+                    <span className="StatPill pill-purple">
+                      👥 Ca đôi: <strong>{totalDoubleShiftsToday}</strong>
                     </span>
                   )}
-                  <span className="StatPill" style={{ color: '#e11d48' }}>
-                    Hủy: {totalCancelledShifts}
+                  <span className="StatPill pill-red">
+                    Hủy: <strong>{totalCancelledShifts}</strong>
                   </span>
-                  <span className="StatPill" style={{ color: isDayLocked ? '#16a34a' : '#b45309' }}>
+                  <span className={`StatPill ${isDayLocked ? 'pill-locked' : 'pill-open'}`}>
                     {isDayLocked ? '🔒 Đã chốt sổ' : '🔓 Đang mở'}
                   </span>
 
                   <button
                     onClick={() => setIsFullscreenBoard(!isFullscreenBoard)}
                     className="Btn BtnDark"
-                    style={{ padding: '4px 10px', fontSize: '11.5px' }}
+                    style={{ padding: '5px 11px', fontSize: '11.5px' }}
                   >
                     {isFullscreenBoard ? '✕ Thoát Full' : '⛶ Full Màn Hình'}
                   </button>
                 </div>
               </div>
 
-              {/* CHẾ ĐỘ 1: BẢNG MA TRẬN */}
+              {/* CHẾ ĐỘ 1: BẢNG NGANG (MA TRẬN HIỆN ĐẠI) */}
               {dailyLayout === 'BOARD' ? (
                 <div className="TableScrollBox">
                   <table className="MatrixTable">
                     <thead>
                       <tr>
-                        <th className="StickyCol" style={{ background: '#fef08a' }}>Ca</th>
+                        <th className="StickyCol StickyCorner">Ca</th>
                         {trainers.map(trainer => {
                           const isOff = sessions.some(
                             s => s.trainerId === trainer._id && s.clientName === 'OFF'
                           );
+                          const validCountHeader = sessions.filter(
+                            s => s.trainerId === trainer._id && s.status !== 'CANCELLED'
+                          ).length;
                           return (
-                            <th key={trainer._id} className="ThTrainer">
-                              <div className="TrainerName" title={trainer.name}>{trainer.name}</div>
+                            <th key={trainer._id} className={`ThTrainer ${isOff ? 'trainer-is-off' : ''}`}>
+                              <div className="ThTrainerTop">
+                                <span className="TrainerName" title={trainer.name}>{trainer.name}</span>
+                                <span className={`HeaderMiniCount ${validCountHeader > 0 ? 'has-shift' : ''}`}>
+                                  {validCountHeader}
+                                </span>
+                              </div>
                               <div className="TrainerActionRow">
                                 {isAdmin ? (
                                   <>
                                     <button
                                       onClick={() => openQuickAddForTrainer(trainer._id)}
-                                      className="MiniTagBtn"
-                                      style={{ background: '#2563eb', color: '#fff' }}
+                                      className="MiniTagBtn btn-add-ca"
                                     >
                                       + Ca
                                     </button>
                                     <button
                                       onClick={() => handleToggleTrainerOff(trainer._id)}
-                                      className="MiniTagBtn"
-                                      style={{
-                                        background: isOff ? '#f59e0b' : '#fff',
-                                        color: isOff ? '#fff' : '#475569',
-                                        border: '1px solid #94a3b8'
-                                      }}
+                                      className={`MiniTagBtn btn-off-ca ${isOff ? 'active-off' : ''}`}
                                     >
                                       {isOff ? 'Đang OFF' : 'OFF'}
                                     </button>
                                   </>
                                 ) : (
-                                  <span style={{ fontSize: '11px', color: isOff ? '#b45309' : '#166534', fontWeight: 700 }}>
-                                    {isOff ? 'OFF' : 'Bấm vào ca để ghi bài tập'}
+                                  <span className={`PtRoleHint ${isOff ? 'is-off' : ''}`}>
+                                    {isOff ? 'Nghỉ phép (OFF)' : 'Chạm ca để ghi bài'}
                                   </span>
                                 )}
                               </div>
@@ -1225,11 +1301,10 @@ export default function App() {
 
                     <tbody>
                       {[...Array(dynamicRowCount)].map((_, rowIndex) => (
-                        <tr
-                          key={rowIndex}
-                          style={{ background: rowIndex % 2 === 0 ? '#ffffff' : '#f8fafc' }}
-                        >
-                          <td className="StickyCol">{rowIndex + 1}</td>
+                        <tr key={rowIndex} className="MatrixRow">
+                          <td className="StickyCol">
+                            <span className="RowIndexNum">{rowIndex + 1}</span>
+                          </td>
 
                           {trainers.map(trainer => {
                             const trainerSessions = getSortedTrainerSessions(trainer._id);
@@ -1243,6 +1318,7 @@ export default function App() {
                             return (
                               <td
                                 key={trainer._id}
+                                className="MatrixCell"
                                 onDragOver={e => e.preventDefault()}
                                 onDrop={e => handleDropOnTrainer(e, trainer._id)}
                               >
@@ -1259,8 +1335,8 @@ export default function App() {
                                     title={cellSession.workoutNote ? `Bài tập: ${cellSession.workoutNote}` : 'Bấm để xếp ca / ghi bài tập'}
                                   >
                                     {isOffMarker ? (
-                                      <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#b45309', whiteSpace: 'nowrap' }}>
-                                        NGHỈ PHÉP (OFF)
+                                      <span className="OffMarkerText">
+                                        ⏸ NGHỈ PHÉP (OFF)
                                       </span>
                                     ) : isDouble ? (
                                       <>
@@ -1345,7 +1421,7 @@ export default function App() {
 
                       {/* DÒNG CHỐT CA CUỐI BẢNG */}
                       <tr className="FooterRow">
-                        <td className="StickyCol" style={{ background: '#0f172a', color: '#fff' }}>
+                        <td className="StickyCol FooterSticky">
                           Chốt
                         </td>
                         {trainers.map(trainer => {
@@ -1358,10 +1434,12 @@ export default function App() {
                           return (
                             <td key={trainer._id}>
                               <div className="FooterCellWrap">
-                                <span className="FooterCountBadge">{validCount}</span>
+                                <span className={`FooterCountBadge ${validCount === 0 ? 'zero-count' : ''}`}>
+                                  {validCount}
+                                </span>
                                 {doubleCount > 0 && (
                                   <span className="FooterDoubleNote">
-                                    📝 Có {doubleCount} ca đôi
+                                    👥 {doubleCount} ca đôi
                                   </span>
                                 )}
                               </div>
@@ -1373,7 +1451,7 @@ export default function App() {
                   </table>
                 </div>
               ) : (
-                /* CHẾ ĐỘ 2: THẺ THEO TỪNG PT */
+                /* CHẾ ĐỘ 2: THẺ THEO TỪNG PT (CHỐNG RỚT NÚT & TỐI ƯU HIỂN THỊ) */
                 <div className="TrainerCardsGrid">
                   {trainers.map(trainer => {
                     const ptSessions = getSortedTrainerSessions(trainer._id);
@@ -1382,110 +1460,116 @@ export default function App() {
                     const doubleCount = validList.filter(s => isDoubleSession(s)).length;
                     const isOff = ptSessions.some(s => s.clientName === 'OFF');
 
-                    return (
-                      <div key={trainer._id} className="PTCard">
-                        <div className="PTCardHeader">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <strong style={{ fontSize: '15px' }}>{trainer.name}</strong>
-                            <span
-                              style={{
-                                background: '#dcfce7',
-                                color: '#166534',
-                                padding: '2px 9px',
-                                borderRadius: '12px',
-                                fontSize: '12px',
-                                fontWeight: 800
-                              }}
-                            >
-                              Chốt: {validCount} ca
-                            </span>
-                            {doubleCount > 0 && (
-                              <span
-                                style={{
-                                  background: '#ede9fe',
-                                  color: '#6d28d9',
-                                  padding: '2px 8px',
-                                  borderRadius: '12px',
-                                  fontSize: '11.5px',
-                                  fontWeight: 800
-                                }}
-                              >
-                                📝 Có {doubleCount} ca đôi
-                              </span>
-                            )}
-                          </div>
+                    const cleanNameForAvatar = (trainer.name || '').replace(/\(.*?\)/g, '').trim();
+                    const nameWords = cleanNameForAvatar.split(/\s+/).filter(Boolean);
+                    const initials =
+                      nameWords.length >= 2
+                        ? (nameWords[0][0] + nameWords[nameWords.length - 1][0]).toUpperCase()
+                        : cleanNameForAvatar.slice(0, 2).toUpperCase() || 'PT';
 
-                          <div style={{ display: 'flex', gap: '5px' }}>
+                    return (
+                      <div
+                        key={trainer._id}
+                        className={`PTCard ${ptSessions.length === 0 ? 'pt-card-empty' : ''} ${isOff ? 'pt-card-off' : ''}`}
+                      >
+                        <div className="PTCardHeader">
+                          <div className="PTCardTitleRow">
+                            <div className="PTCardIdentity">
+                              <span className={`PTAvatar ${validCount > 0 ? 'active' : ''}`}>
+                                {initials}
+                              </span>
+                              <strong className="PTCardName" title={trainer.name}>
+                                {trainer.name}
+                              </strong>
+                            </div>
+
                             {isAdmin && (
-                              <>
+                              <div className="PTCardActions">
                                 <button
                                   onClick={() => openQuickAddForTrainer(trainer._id)}
-                                  className="MiniTagBtn"
-                                  style={{ background: '#2563eb', color: '#fff' }}
+                                  className="MiniTagBtn btn-add-ca"
                                 >
                                   + Ca
                                 </button>
                                 <button
                                   onClick={() => handleToggleTrainerOff(trainer._id)}
-                                  className="MiniTagBtn"
-                                  style={{
-                                    background: isOff ? '#f59e0b' : '#f1f5f9',
-                                    color: isOff ? '#fff' : '#475569'
-                                  }}
+                                  className={`MiniTagBtn btn-off-ca ${isOff ? 'active-off' : ''}`}
                                 >
-                                  OFF
+                                  {isOff ? 'Đang OFF' : 'OFF'}
                                 </button>
-                              </>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="PTCardMetaRow">
+                            <span className={`PTCountPill ${validCount === 0 ? 'zero' : ''}`}>
+                              {validCount > 0 ? `● Chốt: ${validCount} ca` : '○ 0 ca'}
+                            </span>
+                            {doubleCount > 0 && (
+                              <span className="PTDoublePill">
+                                👥 {doubleCount} ca đôi
+                              </span>
+                            )}
+                            {isOff && (
+                              <span className="PTOffPill">⏸ Đang nghỉ phép</span>
                             )}
                           </div>
                         </div>
 
                         {ptSessions.length === 0 ? (
-                          <div style={{ color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '12px 0' }}>
-                            Chưa có lịch tập hôm nay
+                          <div className="PTCardEmptyBody">
+                            <span>☕ Chưa có lịch tập hôm nay</span>
                           </div>
                         ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div className="PTCardSessionList">
                             {ptSessions.map((cellSession, idx) => {
                               const isOffMarker = cellSession.clientName === 'OFF';
                               const isCancelled = cellSession.status === 'CANCELLED' && !isOffMarker;
+                              const isCompleted = cellSession.status === 'COMPLETED';
                               const isDouble = isDoubleSession(cellSession);
                               return (
                                 <div
                                   key={cellSession._id}
                                   onClick={() => openEditModal(cellSession)}
-                                  className={`SessionCard ${isDouble ? 'double-shift' : ''} ${
+                                  className={`SessionCard PTListCard ${isDouble ? 'double-shift' : ''} ${
                                     isOffMarker ? 'off' : ''
-                                  } ${isCancelled ? 'cancelled' : ''}`}
+                                  } ${isCancelled ? 'cancelled' : ''} ${
+                                    isCompleted ? 'completed' : ''
+                                  }`}
                                 >
                                   {isOffMarker ? (
-                                    <span style={{ fontWeight: 800, color: '#b45309', fontSize: '12px' }}>
-                                      NGHỈ PHÉP (OFF)
+                                    <span className="OffMarkerText">
+                                      ⏸ NGHỈ PHÉP (OFF)
                                     </span>
                                   ) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span
-                                          className="ClientTitle"
-                                          style={{
-                                            textDecoration: isCancelled ? 'line-through' : 'none'
-                                          }}
-                                        >
-                                          #{idx + 1}.{' '}
-                                          {isDouble && (
-                                            <span className="DoubleBadge" style={{ marginRight: '5px' }}>
-                                              👥 Ca đôi
+                                    <div className="PTListInner">
+                                      <div className="PTListMainRow">
+                                        <div className="PTListLeft">
+                                          <span className="PTIndexBadge">{idx + 1}</span>
+                                          <div className="PTListNameWrap">
+                                            {isDouble && (
+                                              <span className="DoubleBadge" style={{ marginRight: '5px' }}>
+                                                👥 Ca đôi
+                                              </span>
+                                            )}
+                                            <span
+                                              className="ClientTitle"
+                                              style={{
+                                                textDecoration: isCancelled ? 'line-through' : 'none'
+                                              }}
+                                            >
+                                              {getCleanSessionName(cellSession.clientName)}
                                             </span>
-                                          )}
-                                          {getCleanSessionName(cellSession.clientName)}
-                                        </span>
+                                          </div>
+                                        </div>
 
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <div className="PTListRight">
                                           <span className="TimePill">{cellSession.time || 'h'}</span>
                                           {isAdmin && !cellSession.isLocked && (
                                             <button
                                               onClick={e => handleQuickToggleCancel(cellSession, e)}
                                               className="CancelBtn"
+                                              title={isCancelled ? 'Khôi phục' : 'Gạch hủy ca'}
                                             >
                                               {isCancelled ? '↺' : '✕'}
                                             </button>
@@ -1495,7 +1579,8 @@ export default function App() {
 
                                       {(cellSession.workoutType || cellSession.workoutNote) && (
                                         <div className="MiniWorkoutBadge">
-                                          🏋️ {cellSession.workoutType || 'Bài tập'}{cellSession.workoutNote ? `: ${cellSession.workoutNote}` : ''}
+                                          🏋️ {cellSession.workoutType || 'Bài tập'}
+                                          {cellSession.workoutNote ? `: ${cellSession.workoutNote}` : ''}
                                         </div>
                                       )}
                                     </div>
@@ -1552,7 +1637,7 @@ export default function App() {
 
               <input
                 type="text"
-                placeholder="🔍 Tìm tên hoặc số điện thoại khách hàng..."
+                placeholder="🔍 Tìm tên, SĐT hoặc 4 số cuối khách hàng..."
                 value={searchClient}
                 onChange={e => setSearchClient(e.target.value)}
                 style={{ ...styles.input, flex: 1, minWidth: '200px' }}
@@ -1687,99 +1772,260 @@ export default function App() {
       {/* ==================== TAB 3: TỔNG HỢP & DỌN DẸP THEO THÁNG ==================== */}
       {activeTab === 'SUMMARY' && (
         <div className="MainArea">
-          <div
-            className="ToolbarCard"
-            style={{
-              margin: '0 0 12px 0',
-              background: '#f8fafc',
-              border: '1px solid #cbd5e1'
-            }}
-          >
-            <div className="ToolSection">
-              <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
-                🗓 Quản lý theo Tháng:
-              </span>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={e => handleSelectFullMonth(e.target.value)}
-                style={{ ...styles.input, fontWeight: 700 }}
-              />
-              <button
-                onClick={() => handleSelectFullMonth(selectedMonth)}
-                className="Btn BtnDark"
-              >
-                📅 Xem Cả {currentMonthInfo.label}
-              </button>
-            </div>
-
-            <div className="ToolSection">
-              <button onClick={exportWeeklyToExcel} className="Btn BtnEmerald">
-                📥 Xuất Excel ({startDate.slice(5)} → {endDate.slice(5)})
-              </button>
-
-              {isAdmin && (
-                <button onClick={handleDeleteMonthSessions} className="Btn BtnRed">
-                  🗑 Xóa Chốt Ca {currentMonthInfo.label}
+          {/* KHUNG ĐIỀU KHIỂN GỘP GỌN: LỌC THÁNG / KHOẢNG NGÀY / XUẤT EXCEL / DỌN DỮ LIỆU */}
+          <div className="SummaryControlPanel">
+            <div className="SummaryControlRow">
+              <div className="SummaryFilterGroup">
+                <span className="SummaryFilterLabel">🗓 Tháng:</span>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={e => handleSelectFullMonth(e.target.value)}
+                  style={{ ...styles.input, fontWeight: 700 }}
+                />
+                <button
+                  onClick={() => handleSelectFullMonth(selectedMonth)}
+                  className="Btn BtnDark"
+                >
+                  Xem cả {currentMonthInfo.label}
                 </button>
-              )}
+                <button
+                  onClick={() => {
+                    const wk = getCurrentWeekRange();
+                    setStartDate(wk.start);
+                    setEndDate(wk.end);
+                    loadWeeklySummary(wk.start, wk.end);
+                  }}
+                  className="Btn BtnLight"
+                >
+                  Tuần này
+                </button>
+              </div>
+
+              <div className="SummaryFilterGroup">
+                <span className="SummaryFilterLabel">Từ:</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  style={styles.input}
+                />
+                <span className="SummaryFilterLabel">Đến:</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  style={styles.input}
+                />
+                <button
+                  onClick={() => loadWeeklySummary(startDate, endDate)}
+                  className="Btn BtnBlue"
+                >
+                  🔍 Lọc
+                </button>
+              </div>
+            </div>
+
+            <div className="SummaryControlRow SummaryControlBottom">
+              <div className="SummaryViewSwitch">
+                <button
+                  onClick={() => setSummaryViewMode('CARDS')}
+                  className={`SummarySwitchBtn ${summaryViewMode === 'CARDS' ? 'active' : ''}`}
+                >
+                  🗂 Dạng Thẻ PT
+                </button>
+                <button
+                  onClick={() => setSummaryViewMode('TABLE')}
+                  className={`SummarySwitchBtn ${summaryViewMode === 'TABLE' ? 'active' : ''}`}
+                >
+                  📋 Bảng Đối Chiếu Ngày
+                </button>
+              </div>
+
+              <div className="SummaryFilterGroup">
+                <button onClick={exportWeeklyToExcel} className="Btn BtnEmerald">
+                  📥 Xuất Excel ({formatVNDate(startDate).slice(0, 5)} → {formatVNDate(endDate).slice(0, 5)})
+                </button>
+
+                {isAdmin && (
+                  <button onClick={handleDeleteMonthSessions} className="Btn BtnRed">
+                    🗑 Xóa Chốt Ca {currentMonthInfo.label}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="ToolbarCard" style={{ margin: '0 0 12px 0' }}>
-            <div className="ToolSection">
-              <span style={{ fontSize: '13px', fontWeight: 700 }}>Từ ngày:</span>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={styles.input} />
-              <span style={{ fontSize: '13px', fontWeight: 700 }}>Đến ngày:</span>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={styles.input} />
-              <button onClick={() => loadWeeklySummary(startDate, endDate)} className="Btn BtnBlue">
-                🔍 Lọc Theo Ngày
-              </button>
+          {/* THANH KPI TỔNG QUAN */}
+          <div className="SummaryKpiGrid">
+            <div className="SummaryKpiCard kpi-blue">
+              <span className="SummaryKpiLabel">Tổng Ca Đã Chốt</span>
+              <strong className="SummaryKpiValue">{grandTotalShifts} ca</strong>
+            </div>
+            <div className="SummaryKpiCard kpi-purple">
+              <span className="SummaryKpiLabel">Tổng Ca Đôi</span>
+              <strong className="SummaryKpiValue">{grandTotalDouble} ca đôi</strong>
+            </div>
+            <div className="SummaryKpiCard kpi-green">
+              <span className="SummaryKpiLabel">PT Có Ca Chốt</span>
+              <strong className="SummaryKpiValue">
+                {activeTrainerCount} / {trainers.length} PT
+              </strong>
+            </div>
+            <div className="SummaryKpiCard kpi-slate">
+              <span className="SummaryKpiLabel">Kỳ Đang Xem ({allClosedDatesSorted.length} ngày chốt)</span>
+              <strong className="SummaryKpiValue" style={{ fontSize: '15px' }}>
+                {formatVNDate(startDate)} → {formatVNDate(endDate)}
+              </strong>
             </div>
           </div>
 
-          <div className="ClientCardsGrid">
-            {trainers.map(trainer => {
-              const item = weeklySummary.find(w => w._id === trainer._id);
-              const totalDouble = item?.totalDoubleShifts || 0;
-              return (
-                <div key={trainer._id} className="ClientItemCard">
-                  <div className="ClientCardTop">
-                    <strong style={{ fontSize: '16px', color: '#0f172a' }}>{trainer.name}</strong>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      {totalDouble > 0 && (
+          {/* CHẾ ĐỘ 1: DẠNG THẺ PT (ĐÃ SẮP XẾP ĐÚNG THỨ TỰ NGÀY & THẲNG CỘT) */}
+          {summaryViewMode === 'CARDS' ? (
+            <div className="SummaryCardsGrid">
+              {summaryByTrainer.map(({ trainer, totalShifts, totalDoubleShifts, dailyBreakdown }) => {
+                const barPercent = totalShifts > 0 ? Math.max(8, Math.round((totalShifts / maxTrainerShifts) * 100)) : 0;
+
+                return (
+                  <div
+                    key={trainer._id}
+                    className={`SummaryPTCard ${totalShifts === 0 ? 'empty-pt' : ''}`}
+                  >
+                    <div className="SummaryPTHeader">
+                      <div>
+                        <div className="SummaryPTName">{trainer.name}</div>
+                        <div className="SummaryPTSub">
+                          {dailyBreakdown.length > 0
+                            ? `${dailyBreakdown.length} ngày có ca chốt`
+                            : 'Chưa phát sinh ca chốt'}
+                        </div>
+                      </div>
+
+                      <div className="SummaryPTBadges">
+                        {totalDoubleShifts > 0 && (
+                          <span className="SummaryDoublePill">
+                            👥 {totalDoubleShifts} ca đôi
+                          </span>
+                        )}
                         <span
-                          className="StatusBadge"
-                          style={{ background: '#ede9fe', color: '#6d28d9', fontSize: '12px' }}
+                          className={`SummaryTotalPill ${totalShifts === 0 ? 'zero' : ''}`}
                         >
-                          📝 Có {totalDouble} ca đôi
+                          {totalShifts} ca
                         </span>
-                      )}
-                      <span
-                        className="StatusBadge"
-                        style={{ background: '#0f172a', color: '#4ade80', fontSize: '13px' }}
-                      >
-                        Tổng: {item ? item.totalShifts : 0} ca
-                      </span>
+                      </div>
                     </div>
-                  </div>
 
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {item?.dailyBreakdown?.map((d, i) => (
-                      <span key={i} className="ScheduleTag">
-                        Ngày {d.date.slice(5)}: {d.count} ca
-                        {d.doubleCount ? ` (có ${d.doubleCount} ca đôi)` : ''}
-                      </span>
-                    )) || (
-                      <span style={{ color: '#94a3b8', fontSize: '13px' }}>
-                        Chưa có ngày chốt ca trong khoảng này
-                      </span>
+                    <div className="SummaryProgressTrack">
+                      <div
+                        className="SummaryProgressFill"
+                        style={{ width: `${barPercent}%` }}
+                      />
+                    </div>
+
+                    {dailyBreakdown.length > 0 ? (
+                      <div className="SummaryDayList">
+                        {dailyBreakdown.map(d => (
+                          <div key={d.date} className="SummaryDayRow">
+                            <span className="SummaryDayDate">
+                              📅 {formatShortDate(d.date)}
+                            </span>
+                            <div className="SummaryDayRight">
+                              {d.doubleCount > 0 && (
+                                <span className="SummaryDayDoubleTag">
+                                  {d.doubleCount} ca đôi
+                                </span>
+                              )}
+                              <span className="SummaryDayCount">{d.count} ca</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="SummaryEmptyState">
+                        Chưa có ngày chốt ca trong khoảng thời gian này
+                      </div>
                     )}
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* CHẾ ĐỘ 2: BẢNG ĐỐI CHIẾU THEO TỪNG NGÀY TĂNG DẦN */
+            <div className="BoardCard" style={{ marginTop: '12px' }}>
+              <div className="TableScrollBox">
+                <table className="SummaryMatrixTable">
+                  <thead>
+                    <tr>
+                      <th className="SummaryStickyPT">Huấn Luyện Viên</th>
+                      {allClosedDatesSorted.map(dateStr => (
+                        <th key={dateStr} className="SummaryThDate">
+                          {formatShortDate(dateStr)}
+                        </th>
+                      ))}
+                      <th className="SummaryThTotal">Ca Đôi</th>
+                      <th className="SummaryThTotal">Tổng Ca</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summaryByTrainer.map(({ trainer, totalShifts, totalDoubleShifts, dailyBreakdown }) => (
+                      <tr key={trainer._id}>
+                        <td className="SummaryStickyPT">{trainer.name}</td>
+                        {allClosedDatesSorted.map(dateStr => {
+                          const found = dailyBreakdown.find(d => d.date === dateStr);
+                          return (
+                            <td key={dateStr} className="SummaryTdCell">
+                              {found ? (
+                                <div className="SummaryCellStack">
+                                  <strong>{found.count}</strong>
+                                  {found.doubleCount > 0 && (
+                                    <span className="SummaryCellDbl">+{found.doubleCount} đôi</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span style={{ color: '#cbd5e1' }}>—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="SummaryTdCell">
+                          {totalDoubleShifts > 0 ? (
+                            <span className="SummaryDayDoubleTag">{totalDoubleShifts}</span>
+                          ) : (
+                            <span style={{ color: '#cbd5e1' }}>0</span>
+                          )}
+                        </td>
+                        <td className="SummaryTdTotal">{totalShifts}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="SummaryFooterTr">
+                      <td className="SummaryStickyPT" style={{ background: '#0f172a', color: '#fff' }}>
+                        Tổng Cộng
+                      </td>
+                      {allClosedDatesSorted.map(dateStr => {
+                        const daySum = summaryByTrainer.reduce((acc, x) => {
+                          const found = x.dailyBreakdown.find(d => d.date === dateStr);
+                          return acc + (found ? found.count : 0);
+                        }, 0);
+                        return (
+                          <td key={dateStr} style={{ textAlign: 'center', fontWeight: 800 }}>
+                            {daySum}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'center', color: '#fde047', fontWeight: 800 }}>
+                        {grandTotalDouble}
+                      </td>
+                      <td style={{ textAlign: 'center', color: '#4ade80', fontWeight: 900, fontSize: '14px' }}>
+                        {grandTotalShifts}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
