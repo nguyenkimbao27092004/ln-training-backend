@@ -215,15 +215,30 @@ app.post('/api/auth/client-login', async (req, res) => {
 
     const trainers = await Trainer.find().lean();
     const escapedName = matchedClient.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const recentSessions = await DailySession.find({
+    const rawSessions = await DailySession.find({
+      clientName: { $ne: 'OFF' },
       $or: [
         { clientId: matchedClient._id },
         { clientName: { $regex: escapedName, $options: 'i' } }
       ]
     })
       .sort({ date: -1 })
-      .limit(30)
+      .limit(100)
       .lean();
+
+    // Ưu tiên thông tin buổi tập đã xếp/chốt ca trong ngày đó; nếu trống mới lấy dự phòng từ lịch tuần
+    const recentSessions = rawSessions.map(s => {
+      const dow = s.dayOfWeek || getDayOfWeekNumber(s.date);
+      const weeklySlot = (matchedClient.weeklySchedule || []).find(w => w.dayOfWeek === dow);
+      const hasCustomWorkout = Boolean(s.workoutType || s.workoutNote);
+
+      return {
+        ...s,
+        dayOfWeek: dow,
+        workoutType: hasCustomWorkout ? (s.workoutType || '') : (weeklySlot?.workoutType || ''),
+        workoutNote: hasCustomWorkout ? (s.workoutNote || '') : (weeklySlot?.workoutNote || '')
+      };
+    });
 
     res.json({
       client: matchedClient,
@@ -273,6 +288,18 @@ app.post('/api/daily-session/add', async (req, res) => {
   const { date, trainerId, clientId, clientName, time, saveToWeekly, workoutType, workoutNote } = req.body;
   const dayOfWeek = getDayOfWeekNumber(date);
 
+  let finalWorkoutType = workoutType || '';
+  let finalWorkoutNote = workoutNote || '';
+
+  const clientDoc = clientId ? await Client.findById(clientId).lean() : null;
+  if (!finalWorkoutType && !finalWorkoutNote && clientDoc) {
+    const weeklySlot = (clientDoc.weeklySchedule || []).find(s => s.dayOfWeek === dayOfWeek);
+    if (weeklySlot) {
+      finalWorkoutType = weeklySlot.workoutType || '';
+      finalWorkoutNote = weeklySlot.workoutNote || '';
+    }
+  }
+
   const session = await DailySession.create({
     date,
     dayOfWeek,
@@ -281,34 +308,31 @@ app.post('/api/daily-session/add', async (req, res) => {
     clientName,
     time,
     status: 'SCHEDULED',
-    workoutType: workoutType || '',
-    workoutNote: workoutNote || ''
+    workoutType: finalWorkoutType,
+    workoutNote: finalWorkoutNote
   });
 
-  if (saveToWeekly && clientId) {
-    const client = await Client.findById(clientId).lean();
-    if (client) {
-      const schedule = Array.isArray(client.weeklySchedule) ? [...client.weeklySchedule] : [];
-      const existingIdx = schedule.findIndex(s => s.dayOfWeek === dayOfWeek);
-      if (existingIdx >= 0) {
-        schedule[existingIdx] = {
-          ...schedule[existingIdx],
-          time,
-          assignedTrainerId: trainerId,
-          workoutType: workoutType !== undefined ? workoutType : (schedule[existingIdx].workoutType || ''),
-          workoutNote: workoutNote !== undefined ? workoutNote : (schedule[existingIdx].workoutNote || '')
-        };
-      } else {
-        schedule.push({
-          dayOfWeek,
-          time,
-          assignedTrainerId: trainerId,
-          workoutType: workoutType || '',
-          workoutNote: workoutNote || ''
-        });
-      }
-      await Client.findByIdAndUpdate(clientId, { $set: { weeklySchedule: schedule } });
+  if (saveToWeekly && clientId && clientDoc) {
+    const schedule = Array.isArray(clientDoc.weeklySchedule) ? [...clientDoc.weeklySchedule] : [];
+    const existingIdx = schedule.findIndex(s => s.dayOfWeek === dayOfWeek);
+    if (existingIdx >= 0) {
+      schedule[existingIdx] = {
+        ...schedule[existingIdx],
+        time,
+        assignedTrainerId: trainerId,
+        workoutType: finalWorkoutType || schedule[existingIdx].workoutType || '',
+        workoutNote: finalWorkoutNote || schedule[existingIdx].workoutNote || ''
+      };
+    } else {
+      schedule.push({
+        dayOfWeek,
+        time,
+        assignedTrainerId: trainerId,
+        workoutType: finalWorkoutType,
+        workoutNote: finalWorkoutNote
+      });
     }
+    await Client.findByIdAndUpdate(clientId, { $set: { weeklySchedule: schedule } });
   }
 
   res.json(session);
@@ -469,18 +493,55 @@ app.delete('/api/clients/:id', async (req, res) => {
   }
 });
 
+// CHỐT CA: Lưu cứng trạng thái COMPLETED + tự động lưu kèm nhóm cơ/bài tập nếu ca chưa ghi riêng
 app.post('/api/daily-schedule/close', async (req, res) => {
-  const { date } = req.body;
-  await DailySession.updateMany(
-    { date, status: 'SCHEDULED' },
-    { $set: { status: 'COMPLETED', isLocked: true } }
-  );
-  await DailySession.updateMany(
-    { date, status: 'CANCELLED' },
-    { $set: { isLocked: true } }
-  );
-  const sessions = await DailySession.find({ date }).lean();
-  res.json(sessions);
+  try {
+    const { date } = req.body;
+    const dayOfWeek = getDayOfWeekNumber(date);
+
+    const scheduledSessions = await DailySession.find({ date, status: 'SCHEDULED' }).lean();
+    const clientIds = scheduledSessions.map(s => s.clientId).filter(Boolean);
+    const clientsList = clientIds.length > 0
+      ? await Client.find({ _id: { $in: clientIds } }).lean()
+      : [];
+    const clientMap = new Map(clientsList.map(c => [String(c._id), c]));
+
+    const bulkOps = scheduledSessions.map(s => {
+      const updateSet = { status: 'COMPLETED', isLocked: true };
+      const isDouble = /\[CA ĐÔI\]/i.test(s.clientName || '');
+      const hasCustomWorkout = Boolean(s.workoutType || s.workoutNote);
+
+      if (!hasCustomWorkout && !isDouble && s.clientId) {
+        const client = clientMap.get(String(s.clientId));
+        const slot = (client?.weeklySchedule || []).find(w => w.dayOfWeek === dayOfWeek);
+        if (slot && (slot.workoutType || slot.workoutNote)) {
+          updateSet.workoutType = slot.workoutType || '';
+          updateSet.workoutNote = slot.workoutNote || '';
+        }
+      }
+
+      return {
+        updateOne: {
+          filter: { _id: s._id },
+          update: { $set: updateSet }
+        }
+      };
+    });
+
+    if (bulkOps.length > 0) {
+      await DailySession.bulkWrite(bulkOps);
+    }
+
+    await DailySession.updateMany(
+      { date, status: 'CANCELLED' },
+      { $set: { isLocked: true } }
+    );
+
+    const sessions = await DailySession.find({ date }).lean();
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/daily-schedule/reopen', async (req, res) => {

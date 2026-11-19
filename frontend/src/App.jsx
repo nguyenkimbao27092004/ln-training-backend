@@ -24,6 +24,168 @@ import {
 } from './utils';
 import Modals from './Modals';
 
+// ==================== HỆ THỐNG ICON VECTOR TỐI GIẢN (SVG) CHO KHÁCH HÀNG & PT ====================
+const SvgDumbbell = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6.5 6.5h-2a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1z" />
+    <path d="M19.5 6.5h-2a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1z" />
+    <path d="M2 9.5v5" />
+    <path d="M22 9.5v5" />
+    <path d="M7.5 12h9" />
+  </svg>
+);
+
+const SvgPause = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.3"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="6" y="5" width="4" height="14" rx="1.5" />
+    <rect x="14" y="5" width="4" height="14" rx="1.5" />
+  </svg>
+);
+
+const SvgUserCheck = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="3.8" />
+    <polyline points="16 11 18 13 22 9" />
+  </svg>
+);
+
+const SvgUsersGroup = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M16 21v-2a4 4 0 0 0-4-4H5.5a4 4 0 0 0-4 4v2" />
+    <circle cx="8.75" cy="7" r="3.5" />
+    <path d="M22.5 21v-2a4 4 0 0 0-3-3.85" />
+    <path d="M16.5 3.2a3.5 3.5 0 0 1 0 6.6" />
+  </svg>
+);
+
+const SvgVideoOnline = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="2.5" y="6" width="13.5" height="12" rx="2.5" />
+    <path d="m21.5 8.5-5.5 3.5 5.5 3.5v-7z" />
+  </svg>
+);
+
+// Tự động phân loại khách hàng (OFF / Tập nhóm / Tập Online / Tập 1-1) để chọn icon & màu tương ứng
+function getClientVisualInfo(client = {}) {
+  const isActive = client.status === 'ACTIVE';
+  if (!isActive) {
+    return {
+      variant: 'paused',
+      label: 'Hội viên đang tạm nghỉ (OFF)',
+      renderIcon: (size = 18) => <SvgPause size={size} />
+    };
+  }
+
+  const normalizedName = String(client.name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  const isGroup =
+    normalizedName.includes('nhom') ||
+    normalizedName.includes('+') ||
+    normalizedName.includes('ca doi') ||
+    normalizedName.includes('cap ') ||
+    /\b\d+\s*nguoi\b/.test(normalizedName);
+
+  if (isGroup) {
+    return {
+      variant: 'group',
+      label: 'Hội viên tập nhóm / ca đôi',
+      renderIcon: (size = 18) => <SvgUsersGroup size={size} />
+    };
+  }
+
+  const isOnline = /\b(online|onl)\b/.test(normalizedName);
+  if (isOnline) {
+    return {
+      variant: 'online',
+      label: 'Hội viên tập Online',
+      renderIcon: (size = 18) => <SvgVideoOnline size={size} />
+    };
+  }
+
+  return {
+    variant: 'active',
+    label: 'Hội viên tập 1-1 đang hoạt động',
+    renderIcon: (size = 18) => <SvgUserCheck size={size} />
+  };
+}
+
+// Tự động phân loại trạng thái PT (Nghỉ phép OFF / Đang có ca / Chưa có ca)
+function getTrainerVisualInfo({ isOff = false, validCount = 0 } = {}) {
+  if (isOff) {
+    return {
+      variant: 'off',
+      label: 'Huấn luyện viên đang nghỉ phép (OFF)',
+      renderIcon: (size = 17) => <SvgPause size={size} />
+    };
+  }
+  if (validCount > 0) {
+    return {
+      variant: 'active',
+      label: `Huấn luyện viên đang có ${validCount} ca`,
+      renderIcon: (size = 17) => <SvgDumbbell size={size} />
+    };
+  }
+  return {
+    variant: 'idle',
+    label: 'Huấn luyện viên chưa có ca',
+    renderIcon: (size = 17) => <SvgDumbbell size={size} />
+  };
+}
+
 export default function App() {
   const weekRange = getCurrentWeekRange();
 
@@ -94,6 +256,8 @@ export default function App() {
 
   const [filterTrainer, setFilterTrainer] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL'); // ALL | ACTIVE | PAUSED
+  const [filterDay, setFilterDay] = useState('ALL'); // ALL | 2..8
+  const [filterMissingPhone, setFilterMissingPhone] = useState(false);
   const [searchClient, setSearchClient] = useState('');
   const [sortClientMode, setSortClientMode] = useState('DEFAULT');
   const [editingClient, setEditingClient] = useState(null);
@@ -573,19 +737,102 @@ export default function App() {
       return found ? found.name : (client.primaryTrainerId?.name || 'PT Gym DinhLe');
     };
 
-    const todaySession = recentSessions.find(s => s.date === todayStr && s.status !== 'CANCELLED');
+    // Lấy ngày YYYY-MM-DD tương ứng với từng thứ (T2=2 ... CN=8) của tuần hiện tại
+    const getDateStrForCurrentWeekDay = (targetDayOfWeek) => {
+      const now = new Date();
+      const currentDow = now.getDay() === 0 ? 8 : now.getDay() + 1;
+      const diff = targetDayOfWeek - currentDow;
+      const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    };
+
+    // Tìm buổi xếp lịch thực tế theo ngày (ưu tiên ca đang hoạt động / đã chốt trước ca hủy)
+    const findActualSessionByDate = (dateStr) => {
+      const matches = recentSessions.filter(s => s.date === dateStr && s.clientName !== 'OFF');
+      if (matches.length === 0) return null;
+      return matches.find(s => s.status !== 'CANCELLED') || matches[0];
+    };
+
+    // Ưu tiên thông tin buổi tập của ca xếp lịch/chốt ca hôm đó; nếu trống mới lấy dự phòng từ lịch tuần
+    const resolveWorkoutInfo = (actualSession, weeklySlot) => {
+      const hasCustom = Boolean(actualSession?.workoutType || actualSession?.workoutNote);
+      return {
+        workoutType: hasCustom ? (actualSession.workoutType || '') : (weeklySlot?.workoutType || ''),
+        workoutNote: hasCustom ? (actualSession.workoutNote || '') : (weeklySlot?.workoutNote || '')
+      };
+    };
+
+    const todaySession = findActualSessionByDate(todayStr);
     const todayWeeklySlot = client.weeklySchedule?.find(s => s.dayOfWeek === todayDayOfWeek);
 
-    const activeWorkoutTypeToday = todaySession?.workoutType || todayWeeklySlot?.workoutType || '';
-    const activeWorkoutNoteToday = todaySession?.workoutNote || todayWeeklySlot?.workoutNote || '';
-    const activeTimeToday = todaySession?.time || todayWeeklySlot?.time || '';
-    const activeTrainerToday = getTrainerName(todaySession?.trainerId || todayWeeklySlot?.assignedTrainerId);
+    const isTodayCancelled = todaySession?.status === 'CANCELLED';
+    const isTodayCompleted = todaySession?.status === 'COMPLETED';
+    const isTodayScheduled = !isTodayCancelled && Boolean(todaySession || todayWeeklySlot);
 
-    // Lọc chỉ lấy những ca tập đã hoàn thành (COMPLETED) để hiển thị ở phần Nhật ký của khách hàng
-    const completedSessions = recentSessions.filter(s => s.status === 'COMPLETED');
+    const todayResolvedWorkout = isTodayCancelled
+      ? { workoutType: '', workoutNote: '' }
+      : resolveWorkoutInfo(todaySession, todayWeeklySlot);
+
+    const activeWorkoutTypeToday = todayResolvedWorkout.workoutType;
+    const activeWorkoutNoteToday = todayResolvedWorkout.workoutNote;
+    const activeTimeToday = isTodayCancelled
+      ? ''
+      : (todaySession?.time || todayWeeklySlot?.time || '');
+    const activeTrainerToday = getTrainerName(
+      todaySession?.trainerId || todayWeeklySlot?.assignedTrainerId
+    );
+
+    // Lọc chỉ lấy những ca tập đã hoàn thành (COMPLETED) và luôn đầy đủ thông tin buổi tập
+    const completedSessions = recentSessions
+      .filter(s => s.status === 'COMPLETED' && s.clientName !== 'OFF')
+      .map(s => {
+        const [y, m, d] = (s.date || '').split('-').map(Number);
+        const jsD = y && m && d ? new Date(y, m - 1, d).getDay() : 0;
+        const dow = s.dayOfWeek || (jsD === 0 ? 8 : jsD + 1);
+        const weeklySlot = client.weeklySchedule?.find(w => w.dayOfWeek === dow);
+        const resolved = resolveWorkoutInfo(s, weeklySlot);
+        return {
+          ...s,
+          workoutType: resolved.workoutType,
+          workoutNote: resolved.workoutNote
+        };
+      });
+
+    // Dữ liệu 7 ngày tuần này: ưu tiên dữ liệu xếp lịch & chốt ca thực tế từng ngày
+    const currentWeekDays = DAYS.map(day => {
+      const dateStr = getDateStrForCurrentWeekDay(day.num);
+      const actualSession = findActualSessionByDate(dateStr);
+      const weeklySlot = client.weeklySchedule?.find(s => s.dayOfWeek === day.num);
+      const isCancelled = actualSession?.status === 'CANCELLED';
+      const isCompleted = actualSession?.status === 'COMPLETED';
+      const isExtraSession = !isCancelled && !weeklySlot && Boolean(actualSession);
+      const hasSession = !isCancelled && Boolean(actualSession || weeklySlot);
+      const resolved = isCancelled
+        ? { workoutType: '', workoutNote: '' }
+        : resolveWorkoutInfo(actualSession, weeklySlot);
+
+      return {
+        ...day,
+        dateStr,
+        isToday: day.num === todayDayOfWeek,
+        actualSession,
+        weeklySlot,
+        isCancelled,
+        isCompleted,
+        isExtraSession,
+        hasSession,
+        time: actualSession?.time || weeklySlot?.time || '',
+        trainerName: getTrainerName(actualSession?.trainerId || weeklySlot?.assignedTrainerId),
+        workoutType: resolved.workoutType,
+        workoutNote: resolved.workoutNote
+      };
+    });
+
+    const weeklyCount = (client.weeklySchedule || []).length;
+    const portalVisual = getClientVisualInfo(client);
 
     return (
-      <div className="app-shell">
+      <div className="app-shell portal-shell">
         <header className="ProHeader">
           <div className="BrandRow">
             <img
@@ -612,9 +859,9 @@ export default function App() {
               <button
                 onClick={handleClientLoginSubmit}
                 className="LogoutBtn"
-                style={{ marginRight: '4px' }}
+                disabled={authLoading}
               >
-                🔄 Làm mới
+                {authLoading ? '⏳ Đang tải...' : '🔄 Làm mới'}
               </button>
               <button onClick={handleClientLogout} className="LogoutBtn">
                 🚪 Thoát
@@ -623,226 +870,403 @@ export default function App() {
           </div>
         </header>
 
-        <div className="MainArea" style={{ maxWidth: '960px', margin: '0 auto' }}>
-          {/* THÔNG TIN CÁ NHÂN CỦA KHÁCH HÀNG */}
-          <div className="ClientPortalHeroCard">
-            <div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
-                Thông tin hội viên
+        <div className="PortalContainer">
+          {/* 1. HERO CARD THÔNG TIN HỘI VIÊN */}
+          <section className="PortalHeroCard">
+            <div className="PortalHeroLeft">
+              <div
+                className={`PortalAvatar variant-${portalVisual.variant}`}
+                title={portalVisual.label}
+              >
+                {portalVisual.renderIcon(26)}
               </div>
-              <h2 style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', margin: '4px 0' }}>
-                {client.name}
-              </h2>
-              <div style={{ fontSize: '13.5px', color: '#334155', display: 'flex', gap: '14px', flexWrap: 'wrap', marginTop: '6px' }}>
-                <span>📱 SĐT: <strong>{client.phone}</strong></span>
-                <span>🏋️ PT Phụ trách: <strong>{client.primaryTrainerId?.name || 'Đang cập nhật'}</strong></span>
-              </div>
-              {cleanNote && (
-                <div style={{ marginTop: '8px', fontSize: '12.5px', color: '#b45309', background: '#fffbeb', padding: '5px 10px', borderRadius: '6px', border: '1px solid #fde68a', display: 'inline-block', fontWeight: 600 }}>
-                  📌 Ghi chú gói tập: {cleanNote}
+              <div className="PortalHeroInfo">
+                <div className="PortalHeroKicker">
+                  <span>HỒ SƠ HỘI VIÊN GYM DINHLE</span>
+                  <span className={`PortalStatusChip ${client.status === 'ACTIVE' ? 'active' : 'paused'}`}>
+                    {client.status === 'ACTIVE' ? '● Đang hoạt động' : '⏸ Đang tạm nghỉ (OFF)'}
+                  </span>
                 </div>
-              )}
+                <h2 className="PortalHeroName">{client.name}</h2>
+                <div className="PortalHeroMeta">
+                  <span className="PortalMetaPill">
+                    📱 SĐT: <strong>{client.phone}</strong>
+                  </span>
+                  <span className="PortalMetaPill">
+                    🏋️ PT phụ trách: <strong>{client.primaryTrainerId?.name || 'Đang cập nhật'}</strong>
+                  </span>
+                </div>
+                {cleanNote && (
+                  <div className="PortalHeroNote">
+                    📌 Ghi chú gói tập: <strong>{cleanNote}</strong>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <span
-              className="StatusBadge"
-              style={{
-                background: client.status === 'ACTIVE' ? '#dcfce7' : '#fef3c7',
-                color: client.status === 'ACTIVE' ? '#166534' : '#92400e',
-                fontSize: '13px',
-                padding: '6px 14px'
-              }}
-            >
-              {client.status === 'ACTIVE' ? '● Đang hoạt động' : '⏸ Đang tạm nghỉ (OFF)'}
-            </span>
-          </div>
+            <div className="PortalHeroStats">
+              <div className="PortalStatTile">
+                <span className="PortalStatNum">{weeklyCount}</span>
+                <span className="PortalStatLabel">Buổi / tuần</span>
+              </div>
+              <div className="PortalStatTile tile-emerald">
+                <span className="PortalStatNum">{completedSessions.length}</span>
+                <span className="PortalStatLabel">Đã hoàn thành</span>
+              </div>
+            </div>
+          </section>
 
-          {/* THẺ LỊCH TẬP HÔM NAY CỦA KHÁCH */}
-          <div className="TodayWorkoutBanner">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
-                <span style={{ fontSize: '12px', fontWeight: 800, background: '#1d4ed8', color: '#fff', padding: '3px 8px', borderRadius: '5px' }}>
-                  HÔM NAY — {formatHeaderDate(todayStr).toUpperCase()}
-                </span>
-                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', marginTop: '8px' }}>
-                  {todaySession || todayWeeklySlot
-                    ? `⏰ Ca tập lúc: ${activeTimeToday || 'Báo sau'} — Cùng PT ${activeTrainerToday}`
-                    : '🌿 Hôm nay bạn không có lịch tập cố định (Ngày nghỉ phục hồi cơ)'}
-                </h3>
+          {/* 2. THẺ LỊCH TẬP HÔM NAY NỔI BẬT (ƯU TIÊN LỊCH XẾP & CHỐT CA THỰC TẾ) */}
+          <section
+            className={`PortalTodayCard ${
+              isTodayCompleted ? 'today-done' : isTodayScheduled ? 'today-active' : 'today-rest'
+            }`}
+          >
+            <div className="PortalTodayTop">
+              <div className="PortalTodayDateBadge">
+                <span>📅 HÔM NAY</span>
+                <span className="PortalTodayDateDivider">•</span>
+                <span>{formatHeaderDate(todayStr)}</span>
               </div>
 
-              {activeWorkoutTypeToday && (
-                <div className="WorkoutFocusPill">
-                  🎯 Hôm nay tập: <strong>{activeWorkoutTypeToday.toUpperCase()}</strong>
-                </div>
-              )}
+              <span
+                className={`PortalTodayStateTag ${
+                  isTodayCompleted ? 'done' : isTodayScheduled ? 'scheduled' : 'rest'
+                }`}
+                style={
+                  isTodayCancelled
+                    ? { background: '#fee2e2', color: '#b91c1c' }
+                    : undefined
+                }
+              >
+                {isTodayCompleted
+                  ? '✅ Đã chốt ca hoàn thành'
+                  : isTodayCancelled
+                  ? '✕ Đã báo nghỉ / Hủy'
+                  : isTodayScheduled
+                  ? todaySession
+                    ? '🔥 Đã xếp lịch hôm nay'
+                    : '🔥 Lịch tập hôm nay'
+                  : '🌿 Ngày nghỉ phục hồi'}
+              </span>
             </div>
 
-            {activeWorkoutNoteToday ? (
-              <div className="WorkoutDetailBox">
-                <strong>📝 Chi tiết các bài tập hôm nay do PT soạn:</strong>
-                <div style={{ whiteSpace: 'pre-line', marginTop: '4px', lineHeight: 1.5 }}>
-                  {activeWorkoutNoteToday}
-                </div>
-              </div>
-            ) : (todaySession || todayWeeklySlot) ? (
-              <div style={{ fontSize: '12.5px', color: '#475569', marginTop: '6px' }}>
-                💡 PT sẽ hướng dẫn chi tiết giáo án trực tiếp tại phòng tập.
-              </div>
-            ) : null}
-          </div>
+            <div className="PortalTodayBody">
+              {isTodayScheduled ? (
+                <>
+                  <div className="PortalTodayMain">
+                    <div className="PortalTodayTimeBlock">
+                      <span className="PortalTodayClock">⏰</span>
+                      <div>
+                        <div className="PortalTodayHeadline">
+                          Ca tập lúc <span className="PortalTodayTimeHighlight">{activeTimeToday || 'Báo sau'}</span>
+                        </div>
+                        <div className="PortalTodaySubline">
+                          Huấn luyện viên đồng hành: <strong>{activeTrainerToday}</strong>
+                          {todaySession && isDoubleSession(todaySession) && (
+                            <span
+                              style={{
+                                marginLeft: '8px',
+                                background: '#ede9fe',
+                                color: '#6d28d9',
+                                padding: '2px 7px',
+                                borderRadius: '99px',
+                                fontSize: '11px',
+                                fontWeight: 800
+                              }}
+                            >
+                              👥 Ca đôi
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-          {/* LỊCH TẬP CỐ ĐỊNH TRONG TUẦN CỦA KHÁCH */}
-          <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', margin: '18px 0 10px' }}>
-            📅 Lịch Tập Cố Định Trong Tuần Của Bạn
-          </h3>
-
-          <div className="ClientCardsGrid" style={{ marginTop: 0 }}>
-            {DAYS.map(day => {
-              const slot = client.weeklySchedule?.find(s => s.dayOfWeek === day.num);
-              const isToday = day.num === todayDayOfWeek;
-
-              return (
-                <div
-                  key={day.num}
-                  className="ClientItemCard"
-                  style={{
-                    border: isToday ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                    background: slot ? '#ffffff' : '#f8fafc',
-                    opacity: slot ? 1 : 0.75
-                  }}
-                >
-                  <div className="ClientCardTop">
-                    <span style={{ fontSize: '15px', fontWeight: 800, color: isToday ? '#2563eb' : '#0f172a' }}>
-                      {day.label} {isToday && '(Hôm nay)'}
-                    </span>
-                    {slot ? (
-                      <span className="ScheduleTag" style={{ fontSize: '12.5px' }}>
-                        ⏰ {slot.time || 'Báo sau'}
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>
-                        Nghỉ ngơi
-                      </span>
+                    {activeWorkoutTypeToday && (
+                      <div className="PortalFocusBadge">
+                        <span className="PortalFocusLabel">Nhóm cơ hôm nay</span>
+                        <strong className="PortalFocusValue">🎯 {activeWorkoutTypeToday.toUpperCase()}</strong>
+                      </div>
                     )}
                   </div>
 
-                  {slot ? (
-                    <>
-                      <div style={{ fontSize: '13px', color: '#334155' }}>
-                        👨‍🏫 Huấn luyện viên: <strong>{getTrainerName(slot.assignedTrainerId)}</strong>
+                  {activeWorkoutNoteToday ? (
+                    <div className="PortalWorkoutBox">
+                      <div className="PortalWorkoutBoxTitle">
+                        📝 Chi tiết giáo án hôm nay do PT soạn
+                      </div>
+                      <div className="PortalWorkoutBoxText">{activeWorkoutNoteToday}</div>
+                    </div>
+                  ) : (
+                    <div className="PortalTodayTip">
+                      💡 PT sẽ hướng dẫn chi tiết kỹ thuật và mức tạ phù hợp trực tiếp tại phòng tập.
+                    </div>
+                  )}
+                </>
+              ) : isTodayCancelled ? (
+                <div className="PortalRestMessage">
+                  <div
+                    className="PortalRestIcon"
+                    style={{ background: '#fef2f2', borderColor: '#fecaca' }}
+                  >
+                    ✕
+                  </div>
+                  <div>
+                    <div className="PortalTodayHeadline">Buổi tập hôm nay đã được báo nghỉ / hủy</div>
+                    <div className="PortalTodaySubline">
+                      Lịch ngày hôm nay đã cập nhật trạng thái nghỉ. Hẹn gặp lại bạn ở buổi tập tiếp theo!
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="PortalRestMessage">
+                  <div className="PortalRestIcon">🌿</div>
+                  <div>
+                    <div className="PortalTodayHeadline">Hôm nay bạn không có lịch tập cố định</div>
+                    <div className="PortalTodaySubline">
+                      Hãy dành thời gian giãn cơ nhẹ, bổ sung đủ nước và dinh dưỡng để cơ bắp phục hồi tốt nhất!
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* 3. LỊCH TẬP TRONG TUẦN NÀY (ƯU TIÊN LỊCH XẾP & CHỐT CA THỰC TẾ) */}
+          <section className="PortalSection">
+            <div className="PortalSectionHeader">
+              <div>
+                <h3 className="PortalSectionTitle">📅 Lịch Tập Trong Tuần Của Bạn</h3>
+                <p className="PortalSectionSub">
+                  Tự động đồng bộ theo lịch xếp thực tế & chốt ca từng ngày (kết hợp lịch cố định)
+                </p>
+              </div>
+              <span className="PortalCountChip">{weeklyCount} buổi cố định / tuần</span>
+            </div>
+
+            {/* Thanh tổng quan nhanh 7 ngày trong tuần */}
+            <div className="PortalWeekStrip">
+              {currentWeekDays.map(day => {
+                const shortLabel = day.num === 8 ? 'CN' : `T${day.num}`;
+                return (
+                  <div
+                    key={day.num}
+                    className={`PortalStripItem ${day.hasSession ? 'has-slot' : 'is-rest'} ${day.isToday ? 'is-today' : ''}`}
+                    style={
+                      day.isCompleted
+                        ? { background: '#ecfdf5', borderColor: day.isToday ? '#10b981' : '#a7f3d0' }
+                        : day.isCancelled
+                        ? { background: '#fef2f2', borderColor: day.isToday ? '#ef4444' : '#fecaca' }
+                        : undefined
+                    }
+                  >
+                    <span
+                      className="PortalStripDay"
+                      style={
+                        day.isCompleted
+                          ? { color: '#047857' }
+                          : day.isCancelled
+                          ? { color: '#b91c1c' }
+                          : undefined
+                      }
+                    >
+                      {shortLabel}
+                    </span>
+                    <span
+                      className="PortalStripTime"
+                      style={
+                        day.isCompleted
+                          ? { color: '#059669' }
+                          : day.isCancelled
+                          ? { color: '#dc2626' }
+                          : undefined
+                      }
+                    >
+                      {day.isCancelled
+                        ? 'Đã hủy'
+                        : day.hasSession
+                        ? `${day.isCompleted ? '✓ ' : ''}${day.time || 'Có lịch'}`
+                        : 'Nghỉ'}
+                    </span>
+                    {day.isToday && <span className="PortalStripTodayDot" title="Hôm nay" />}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Lưới chi tiết từng thứ */}
+            <div className="PortalWeekGrid">
+              {currentWeekDays.map(day => (
+                <div
+                  key={day.num}
+                  className={`PortalDayCard ${day.hasSession ? 'has-session' : 'rest-day'} ${day.isToday ? 'is-today' : ''}`}
+                  style={
+                    day.isCompleted
+                      ? { borderTopColor: '#10b981' }
+                      : day.isCancelled
+                      ? { borderColor: '#fecaca', background: '#fffafa' }
+                      : undefined
+                  }
+                >
+                  <div className="PortalDayCardTop">
+                    <div className="PortalDayTitleGroup" style={{ flexWrap: 'wrap' }}>
+                      <span className="PortalDayName">{day.label}</span>
+                      {day.isToday && <span className="PortalTodayMiniTag">Hôm nay</span>}
+                      {day.isCompleted && (
+                        <span
+                          className="PortalTodayMiniTag"
+                          style={{ background: '#10b981' }}
+                        >
+                          ✓ Đã chốt
+                        </span>
+                      )}
+                      {day.isExtraSession && !day.isCompleted && (
+                        <span
+                          className="PortalTodayMiniTag"
+                          style={{ background: '#7c3aed' }}
+                        >
+                          Xếp bổ sung
+                        </span>
+                      )}
+                    </div>
+
+                    {day.isCancelled ? (
+                      <span
+                        className="PortalDayRestTag"
+                        style={{ background: '#fee2e2', color: '#b91c1c' }}
+                      >
+                        ✕ Đã hủy
+                      </span>
+                    ) : day.hasSession ? (
+                      <span
+                        className="PortalDayTimeBadge"
+                        style={
+                          day.isCompleted
+                            ? { background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0' }
+                            : undefined
+                        }
+                      >
+                        ⏰ {day.time || 'Báo sau'}
+                      </span>
+                    ) : (
+                      <span className="PortalDayRestTag">Nghỉ ngơi</span>
+                    )}
+                  </div>
+
+                  {day.isCancelled ? (
+                    <div className="PortalDayRestBody" style={{ color: '#b91c1c' }}>
+                      <span>✕ Buổi tập ngày này đã báo nghỉ / hủy</span>
+                    </div>
+                  ) : day.hasSession ? (
+                    <div className="PortalDayContent">
+                      <div className="PortalDayPtRow">
+                        <span>👨‍🏫 HLV:</span>
+                        <strong>{day.trainerName}</strong>
+                        {day.actualSession && isDoubleSession(day.actualSession) && (
+                          <span
+                            style={{
+                              marginLeft: 'auto',
+                              background: '#ede9fe',
+                              color: '#6d28d9',
+                              padding: '1.5px 7px',
+                              borderRadius: '99px',
+                              fontSize: '10.5px',
+                              fontWeight: 800
+                            }}
+                          >
+                            👥 Ca đôi
+                          </span>
+                        )}
                       </div>
 
                       <div
-                        style={{
-                          background: slot.workoutType ? '#eff6ff' : '#f1f5f9',
-                          border: slot.workoutType ? '1px solid #bfdbfe' : '1px dashed #cbd5e1',
-                          padding: '8px 10px',
-                          borderRadius: '8px',
-                          marginTop: '4px'
-                        }}
+                        className={`PortalDayMuscleBox ${day.workoutType ? 'filled' : 'empty'}`}
+                        style={
+                          day.isCompleted && day.workoutType
+                            ? { background: '#f0fdf4', borderColor: '#bbf7d0' }
+                            : undefined
+                        }
                       >
-                        <div style={{ fontSize: '13px', fontWeight: 800, color: slot.workoutType ? '#1d4ed8' : '#64748b' }}>
-                          {slot.workoutType
-                            ? `🏋️ Nhóm cơ: ${slot.workoutType}`
-                            : '🏋️ Nhóm cơ: Chưa ghi (Thân trên / Thân dưới)'}
+                        <div
+                          className="PortalDayMuscleTitle"
+                          style={day.isCompleted && day.workoutType ? { color: '#15803d' } : undefined}
+                        >
+                          <span>🏋️</span>
+                          <span>
+                            {day.workoutType
+                              ? day.workoutType
+                              : 'Chưa ghi nhóm cơ'}
+                          </span>
                         </div>
 
-                        {slot.workoutNote && (
+                        {day.workoutNote && (
                           <div
-                            style={{
-                              fontSize: '12.5px',
-                              color: '#1e293b',
-                              marginTop: '6px',
-                              whiteSpace: 'pre-line',
-                              borderTop: '1px solid #dbeafe',
-                              paddingTop: '6px'
-                            }}
+                            className="PortalDayMuscleNote"
+                            style={day.isCompleted ? { borderTopColor: '#bbf7d0' } : undefined}
                           >
-                            <strong>Bài tập:</strong> {slot.workoutNote}
+                            <strong>Bài tập:</strong> {day.workoutNote}
                           </div>
                         )}
                       </div>
-                    </>
+                    </div>
                   ) : (
-                    <div style={{ fontSize: '12.5px', color: '#94a3b8' }}>
-                      Không có ca tập cố định vào ngày này.
+                    <div className="PortalDayRestBody">
+                      <span>☕ Không có ca tập cố định</span>
                     </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          </section>
 
-          {/* CÁC BUỔI TẬP GẦN ĐÂY TRÊN LỊCH NGÀY (CHỈ HIỂN THỊ NHỮNG CA ĐÃ HOÀN THÀNH) */}
+          {/* 4. NHẬT KÝ CÁC BUỔI TẬP ĐÃ HOÀN THÀNH */}
           {completedSessions.length > 0 && (
-            <>
-              <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', margin: '22px 0 10px' }}>
-                📝 Nhật Ký Các Buổi Tập Theo Ngày Của Bạn
-              </h3>
-              <div className="ClientCardsGrid" style={{ marginTop: 0 }}>
-                {completedSessions.map(s => (
-                  <div key={s._id} className="ClientItemCard">
-                    <div className="ClientCardTop">
-                      <strong style={{ fontSize: '14px', color: '#0f172a' }}>
-                        {formatHeaderDate(s.date)}
-                      </strong>
-                      <span
-                        className="StatusBadge"
-                        style={{
-                          background:
-                            s.status === 'COMPLETED'
-                              ? '#dcfce7'
-                              : s.status === 'CANCELLED'
-                              ? '#fee2e2'
-                              : '#e0f2fe',
-                          color:
-                            s.status === 'COMPLETED'
-                              ? '#166534'
-                              : s.status === 'CANCELLED'
-                              ? '#991b1b'
-                              : '#0369a1'
-                        }}
-                      >
-                        {s.status === 'COMPLETED'
-                          ? '✅ Đã hoàn thành'
-                          : s.status === 'CANCELLED'
-                          ? '✕ Đã nghỉ / Hủy'
-                          : `⏰ Lịch hẹn: ${s.time || 'h'}`}
-                      </span>
-                    </div>
+            <section className="PortalSection">
+              <div className="PortalSectionHeader">
+                <div>
+                  <h3 className="PortalSectionTitle">🏆 Nhật Ký Các Buổi Tập Đã Hoàn Thành</h3>
+                  <p className="PortalSectionSub">
+                    Ghi nhận những buổi tập bạn đã hoàn thành cùng huấn luyện viên
+                  </p>
+                </div>
+                <span className="PortalCountChip chip-emerald">
+                  ✅ {completedSessions.length} buổi
+                </span>
+              </div>
 
-                    <div style={{ fontSize: '12.5px', color: '#475569' }}>
-                      PT hướng dẫn: <strong>{getTrainerName(s.trainerId)}</strong> • Giờ tập: <strong>{s.time || '—'}</strong>
+              <div className="PortalJournalGrid">
+                {completedSessions.map(s => (
+                  <div key={s._id} className="PortalLogCard">
+                    <div className="PortalLogTop">
+                      <div className="PortalLogDateWrap">
+                        <span className="PortalLogCheckIcon">✓</span>
+                        <div>
+                          <div className="PortalLogDate">{formatHeaderDate(s.date)}</div>
+                          <div className="PortalLogMeta">
+                            PT: <strong>{getTrainerName(s.trainerId)}</strong> • Giờ: <strong>{s.time || '—'}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      <span className="PortalLogStatusPill">Đã hoàn thành</span>
                     </div>
 
                     {(s.workoutType || s.workoutNote) && (
-                      <div
-                        style={{
-                          background: '#f0fdf4',
-                          border: '1px solid #bbf7d0',
-                          padding: '8px 10px',
-                          borderRadius: '8px',
-                          fontSize: '12.5px',
-                          color: '#166534'
-                        }}
-                      >
+                      <div className="PortalLogWorkoutBox">
                         {s.workoutType && (
-                          <div style={{ fontWeight: 800, marginBottom: s.workoutNote ? '4px' : 0 }}>
-                            🎯 Tập: {s.workoutType}
+                          <div className="PortalLogWorkoutTitle">
+                            🎯 Nhóm cơ: {s.workoutType}
                           </div>
                         )}
                         {s.workoutNote && (
-                          <div style={{ whiteSpace: 'pre-line', color: '#1e293b' }}>
-                            {s.workoutNote}
-                          </div>
+                          <div className="PortalLogWorkoutNote">{s.workoutNote}</div>
                         )}
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-            </>
+            </section>
           )}
         </div>
       </div>
@@ -1005,29 +1429,85 @@ export default function App() {
     s => s.status === 'CANCELLED' && s.clientName !== 'OFF'
   ).length;
 
+  const activeClientsCount = clients.filter(c => c.status === 'ACTIVE').length;
   const pausedClientsCount = clients.filter(c => c.status === 'PAUSED').length;
+  const missingPhoneClientsCount = clients.filter(c => !String(c.phone || '').trim()).length;
 
-  // Tìm kiếm khách hàng bằng cả TÊN, SỐ ĐIỆN THOẠI hoặc 4 SỐ CUỐI
+  // Chuẩn hóa tiếng Việt không dấu để tìm kiếm cực nhanh & chính xác
+  const normalizeVi = (str = '') =>
+    String(str)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase()
+      .trim();
+
+  const hasActiveClientFilters =
+    filterTrainer !== 'ALL' ||
+    filterStatus !== 'ALL' ||
+    filterDay !== 'ALL' ||
+    filterMissingPhone ||
+    searchClient.trim() !== '';
+
+  const resetClientFilters = () => {
+    setFilterTrainer('ALL');
+    setFilterStatus('ALL');
+    setFilterDay('ALL');
+    setFilterMissingPhone(false);
+    setSearchClient('');
+    setSortClientMode('DEFAULT');
+  };
+
+  // Tìm kiếm thông minh: hỗ trợ tiếng Việt không dấu, nhiều từ khóa, SĐT/4 số cuối, tên PT, giờ tập, nhóm cơ, ghi chú
   const displayedClients = clients
-    .filter(c => filterTrainer === 'ALL' || (c.primaryTrainerId?._id || c.primaryTrainerId) === filterTrainer)
+    .filter(c => filterTrainer === 'ALL' || String(c.primaryTrainerId?._id || c.primaryTrainerId) === String(filterTrainer))
     .filter(c => filterStatus === 'ALL' || c.status === filterStatus)
+    .filter(c => !filterMissingPhone || !String(c.phone || '').trim())
     .filter(c => {
-      const q = searchClient.toLowerCase().trim();
-      if (!q) return true;
-      const qDigits = q.replace(/\D/g, '');
-      const rawPhone = (c.phone || '').toLowerCase();
+      if (filterDay === 'ALL') return true;
+      const targetDay = Number(filterDay);
+      return (c.weeklySchedule || []).some(slot => Number(slot.dayOfWeek) === targetDay);
+    })
+    .filter(c => {
+      const normalizedQuery = normalizeVi(searchClient);
+      if (!normalizedQuery) return true;
+      const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+
+      const { cleanNote } = parseClientNoteAndTime(c.packageNote, c.updatedAt);
+      const rawPhone = String(c.phone || '');
       const phoneDigits = rawPhone.replace(/\D/g, '');
-      const matchName = c.name.toLowerCase().includes(q);
-      const matchPhone = rawPhone.includes(q) || (qDigits.length > 0 && phoneDigits.includes(qDigits));
-      return matchName || matchPhone;
+      const ptName = c.primaryTrainerId?.name || '';
+      const scheduleText = (c.weeklySchedule || [])
+        .map(s => {
+          const dayToken = s.dayOfWeek === 8 ? 'cn chu nhat t8' : `t${s.dayOfWeek} thu ${s.dayOfWeek}`;
+          return `${dayToken} ${s.time || ''} ${s.workoutType || ''} ${s.workoutNote || ''}`;
+        })
+        .join(' ');
+
+      const haystack = normalizeVi(`${c.name} ${rawPhone} ${phoneDigits} ${ptName} ${cleanNote} ${scheduleText}`);
+      return tokens.every(token => {
+        const tokenDigits = token.replace(/\D/g, '');
+        if (haystack.includes(token)) return true;
+        if (tokenDigits.length > 0 && phoneDigits.includes(tokenDigits)) return true;
+        return false;
+      });
     })
     .sort((a, b) => {
-      if (sortClientMode !== 'RECENT') return 0;
-      const timeA = parseClientNoteAndTime(a.packageNote, a.updatedAt).updatedAt;
-      const timeB = parseClientNoteAndTime(b.packageNote, b.updatedAt).updatedAt;
-      const msA = timeA ? new Date(timeA).getTime() : 0;
-      const msB = timeB ? new Date(timeB).getTime() : 0;
-      return msB - msA;
+      if (sortClientMode === 'RECENT') {
+        const timeA = parseClientNoteAndTime(a.packageNote, a.updatedAt).updatedAt;
+        const timeB = parseClientNoteAndTime(b.packageNote, b.updatedAt).updatedAt;
+        const msA = timeA ? new Date(timeA).getTime() : 0;
+        const msB = timeB ? new Date(timeB).getTime() : 0;
+        return msB - msA;
+      }
+      if (sortClientMode === 'NAME_ASC') {
+        return (a.name || '').localeCompare(b.name || '', 'vi');
+      }
+      if (sortClientMode === 'MOST_SESSIONS') {
+        return (b.weeklySchedule?.length || 0) - (a.weeklySchedule?.length || 0);
+      }
+      return 0;
     });
 
   const currentMonthInfo = getMonthRange(selectedMonth);
@@ -1263,10 +1743,20 @@ export default function App() {
                           const validCountHeader = sessions.filter(
                             s => s.trainerId === trainer._id && s.status !== 'CANCELLED'
                           ).length;
+                          const trainerVisual = getTrainerVisualInfo({ isOff, validCount: validCountHeader });
+
                           return (
                             <th key={trainer._id} className={`ThTrainer ${isOff ? 'trainer-is-off' : ''}`}>
                               <div className="ThTrainerTop">
-                                <span className="TrainerName" title={trainer.name}>{trainer.name}</span>
+                                <div className="ThTrainerNameGroup">
+                                  <span
+                                    className={`HeaderMiniIcon variant-${trainerVisual.variant}`}
+                                    title={trainerVisual.label}
+                                  >
+                                    {trainerVisual.renderIcon(13)}
+                                  </span>
+                                  <span className="TrainerName" title={trainer.name}>{trainer.name}</span>
+                                </div>
                                 <span className={`HeaderMiniCount ${validCountHeader > 0 ? 'has-shift' : ''}`}>
                                   {validCountHeader}
                                 </span>
@@ -1451,7 +1941,7 @@ export default function App() {
                   </table>
                 </div>
               ) : (
-                /* CHẾ ĐỘ 2: THẺ THEO TỪNG PT (CHỐNG RỚT NÚT & TỐI ƯU HIỂN THỊ) */
+                /* CHẾ ĐỘ 2: THẺ THEO TỪNG PT (ICON VECTOR SVG TỐI GIẢN THEO TRẠNG THÁI) */
                 <div className="TrainerCardsGrid">
                   {trainers.map(trainer => {
                     const ptSessions = getSortedTrainerSessions(trainer._id);
@@ -1459,13 +1949,7 @@ export default function App() {
                     const validCount = validList.length;
                     const doubleCount = validList.filter(s => isDoubleSession(s)).length;
                     const isOff = ptSessions.some(s => s.clientName === 'OFF');
-
-                    const cleanNameForAvatar = (trainer.name || '').replace(/\(.*?\)/g, '').trim();
-                    const nameWords = cleanNameForAvatar.split(/\s+/).filter(Boolean);
-                    const initials =
-                      nameWords.length >= 2
-                        ? (nameWords[0][0] + nameWords[nameWords.length - 1][0]).toUpperCase()
-                        : cleanNameForAvatar.slice(0, 2).toUpperCase() || 'PT';
+                    const trainerVisual = getTrainerVisualInfo({ isOff, validCount });
 
                     return (
                       <div
@@ -1475,8 +1959,11 @@ export default function App() {
                         <div className="PTCardHeader">
                           <div className="PTCardTitleRow">
                             <div className="PTCardIdentity">
-                              <span className={`PTAvatar ${validCount > 0 ? 'active' : ''}`}>
-                                {initials}
+                              <span
+                                className={`PTAvatar variant-${trainerVisual.variant}`}
+                                title={trainerVisual.label}
+                              >
+                                {trainerVisual.renderIcon(18)}
                               </span>
                               <strong className="PTCardName" title={trainer.name}>
                                 {trainer.name}
@@ -1600,172 +2087,283 @@ export default function App() {
         </>
       )}
 
-      {/* ==================== TAB 2: QUẢN LÝ LỊCH TUẦN, SĐT & GHI BÀI TẬP ==================== */}
+      {/* ==================== TAB 2: QUẢN LÝ LỊCH TUẦN, SĐT & GHI BÀI TẬP (TỐI ƯU GIAO DIỆN & TÌM KIẾM) ==================== */}
       {activeTab === 'CLIENTS' && (
         <div className="MainArea">
-          <div className="ToolbarCard" style={{ margin: '0 0 12px 0' }}>
-            <div className="ToolSection" style={{ flex: 1 }}>
-              <select
-                value={filterTrainer}
-                onChange={e => setFilterTrainer(e.target.value)}
-                style={styles.input}
-              >
-                <option value="ALL">Tất cả PT ({clients.length} khách)</option>
-                {trainers.map(t => (
-                  <option key={t._id} value={t._id}>{t.name}</option>
-                ))}
-              </select>
+          {/* BẢNG ĐIỀU KHIỂN & TÌM KIẾM THÔNG MINH */}
+          <div className="ClientsControlPanel">
+            {/* Tầng 1: Ô tìm kiếm thông minh + Nút thao tác Admin */}
+            <div className="ClientsTopRow">
+              <div className="SmartSearchWrap">
+                <span className="SmartSearchIcon">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Tìm nhanh không dấu: tên khách, SĐT/4 số cuối, tên PT, giờ (7h15), thứ (T2), nhóm cơ..."
+                  value={searchClient}
+                  onChange={e => setSearchClient(e.target.value)}
+                  className="SmartSearchInput"
+                />
+                {searchClient && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchClient('')}
+                    className="SmartSearchClear"
+                    title="Xóa từ khóa"
+                  >
+                    ✕
+                  </button>
+                )}
+                <span className="SearchResultCountBadge">
+                  {displayedClients.length}/{clients.length}
+                </span>
+              </div>
 
-              <select
-                value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value)}
-                style={styles.input}
-              >
-                <option value="ALL">Tất cả trạng thái</option>
-                <option value="ACTIVE">● Đang tập ({clients.filter(c => c.status === 'ACTIVE').length})</option>
-                <option value="PAUSED">⏸ Tạm nghỉ / OFF ({pausedClientsCount})</option>
-              </select>
+              {isAdmin && (
+                <div className="ClientsAdminActions">
+                  <button
+                    onClick={handlePauseAllClients}
+                    className="Btn BtnOrange"
+                    title="Chuyển toàn bộ khách hàng sang Tạm nghỉ (OFF) để kiểm tra ai tập tuần mới"
+                  >
+                    ⏸ Chuyển Toàn Bộ OFF
+                  </button>
 
-              <select
-                value={sortClientMode}
-                onChange={e => setSortClientMode(e.target.value)}
-                style={styles.input}
-              >
-                <option value="DEFAULT">📑 Sắp xếp: Mặc định</option>
-                <option value="RECENT">🕒 Sắp xếp: Mới chỉnh sửa gần nhất</option>
-              </select>
-
-              <input
-                type="text"
-                placeholder="🔍 Tìm tên, SĐT hoặc 4 số cuối khách hàng..."
-                value={searchClient}
-                onChange={e => setSearchClient(e.target.value)}
-                style={{ ...styles.input, flex: 1, minWidth: '200px' }}
-              />
+                  <button
+                    onClick={() =>
+                      setEditingClient({
+                        name: '',
+                        phone: '',
+                        primaryTrainerId: trainers[0]?._id || '',
+                        status: 'ACTIVE',
+                        packageNote: '',
+                        weeklySchedule: []
+                      })
+                    }
+                    className="Btn BtnBlue"
+                  >
+                    + Thêm Khách Mới
+                  </button>
+                </div>
+              )}
             </div>
 
-            {isAdmin && (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Tầng 2: Thẻ lọc trạng thái nhanh + Bộ lọc PT / Thứ trong tuần / Sắp xếp */}
+            <div className="ClientsBottomRow">
+              <div className="QuickFilterPills">
                 <button
-                  onClick={handlePauseAllClients}
-                  className="Btn BtnOrange"
-                  title="Chuyển toàn bộ khách hàng sang Tạm nghỉ (OFF) để kiểm tra ai tập tuần mới"
+                  type="button"
+                  onClick={() => {
+                    setFilterStatus('ALL');
+                    setFilterMissingPhone(false);
+                  }}
+                  className={`QuickPill ${filterStatus === 'ALL' && !filterMissingPhone ? 'active' : ''}`}
                 >
-                  ⏸ Chuyển Toàn Bộ Sang OFF
+                  Tất cả <span>{clients.length}</span>
                 </button>
-
                 <button
-                  onClick={() =>
-                    setEditingClient({
-                      name: '',
-                      phone: '',
-                      primaryTrainerId: trainers[0]?._id || '',
-                      status: 'ACTIVE',
-                      packageNote: '',
-                      weeklySchedule: []
-                    })
-                  }
-                  className="Btn BtnBlue"
+                  type="button"
+                  onClick={() => {
+                    setFilterStatus('ACTIVE');
+                    setFilterMissingPhone(false);
+                  }}
+                  className={`QuickPill pill-green ${filterStatus === 'ACTIVE' && !filterMissingPhone ? 'active' : ''}`}
                 >
-                  + Thêm Khách Mới
+                  ● Đang tập <span>{activeClientsCount}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterStatus('PAUSED');
+                    setFilterMissingPhone(false);
+                  }}
+                  className={`QuickPill pill-amber ${filterStatus === 'PAUSED' && !filterMissingPhone ? 'active' : ''}`}
+                >
+                  ⏸ Tạm nghỉ <span>{pausedClientsCount}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterMissingPhone(!filterMissingPhone)}
+                  className={`QuickPill pill-rose ${filterMissingPhone ? 'active' : ''}`}
+                  title="Lọc nhanh các hội viên chưa cập nhật SĐT để nhắn bổ sung"
+                >
+                  📵 Thiếu SĐT <span>{missingPhoneClientsCount}</span>
                 </button>
               </div>
-            )}
-          </div>
 
-          <div className="ClientCardsGrid">
-            {displayedClients.map(client => {
-              const { cleanNote, updatedAt } = parseClientNoteAndTime(
-                client.packageNote,
-                client.updatedAt
-              );
-              const formattedTime = formatUpdateTime(updatedAt);
+              <div className="ClientsSelectFilters">
+                <select
+                  value={filterTrainer}
+                  onChange={e => setFilterTrainer(e.target.value)}
+                  className="CleanSelect"
+                >
+                  <option value="ALL">👨‍🏫 Tất cả PT</option>
+                  {trainers.map(t => (
+                    <option key={t._id} value={t._id}>{t.name}</option>
+                  ))}
+                </select>
 
-              return (
-                <div key={client._id} className="ClientItemCard">
-                  <div className="ClientCardTop">
-                    <div>
-                      <div style={{ fontSize: '15.5px', fontWeight: 800, color: '#0f172a' }}>
-                        {client.name}
-                      </div>
-                      <div style={{ fontSize: '12.5px', color: '#0369a1', fontWeight: 700, marginTop: '2px' }}>
-                        📱 SĐT: {client.phone ? client.phone : <span style={{ color: '#94a3b8', fontWeight: 500 }}>Chưa cập nhật</span>}
-                      </div>
-                      <div style={{ fontSize: '12.5px', color: '#64748b', fontWeight: 600, marginTop: '2px' }}>
-                        PT Quản lý: <strong style={{ color: '#1e293b' }}>{client.primaryTrainerId?.name || '—'}</strong>
-                      </div>
-                    </div>
+                <select
+                  value={filterDay}
+                  onChange={e => setFilterDay(e.target.value)}
+                  className="CleanSelect"
+                >
+                  <option value="ALL">📅 Tất cả các thứ</option>
+                  {DAYS.map(d => (
+                    <option key={d.num} value={d.num}>Tập {d.label}</option>
+                  ))}
+                </select>
 
-                    <span
-                      className="StatusBadge"
-                      style={{
-                        background: client.status === 'ACTIVE' ? '#dcfce7' : '#fef3c7',
-                        color: client.status === 'ACTIVE' ? '#166534' : '#92400e'
-                      }}
-                    >
-                      {client.status === 'ACTIVE' ? '● Đang tập' : '⏸ Tạm nghỉ (OFF)'}
-                    </span>
-                  </div>
+                <select
+                  value={sortClientMode}
+                  onChange={e => setSortClientMode(e.target.value)}
+                  className="CleanSelect"
+                >
+                  <option value="DEFAULT">📑 Sắp xếp: Mặc định</option>
+                  <option value="RECENT">🕒 Mới sửa gần nhất</option>
+                  <option value="NAME_ASC">🔤 Tên A → Z</option>
+                  <option value="MOST_SESSIONS">🔥 Nhiều buổi/tuần nhất</option>
+                </select>
 
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {client.weeklySchedule
-                      ?.sort((a, b) => a.dayOfWeek - b.dayOfWeek)
-                      .map((slot, idx) => (
-                        <span key={idx} className="ScheduleTag">
-                          T{slot.dayOfWeek}: {slot.time || 'Báo sau'}
-                          {slot.workoutType ? ` • ${slot.workoutType}` : ''}
-                        </span>
-                      ))}
-                  </div>
-
-                  {cleanNote && (
-                    <div
-                      style={{
-                        background: '#fffbeb',
-                        border: '1px solid #fde68a',
-                        padding: '6px 10px',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        color: '#92400e',
-                        fontWeight: 600
-                      }}
-                    >
-                      📌 {cleanNote}
-                    </div>
-                  )}
-
-                  <div
-                    className={`ModifiedTimeBox ${formattedTime ? 'edited' : 'unchanged'}`}
-                    style={{ marginTop: 'auto' }}
+                {hasActiveClientFilters && (
+                  <button
+                    type="button"
+                    onClick={resetClientFilters}
+                    className="ResetFilterBtn"
+                    title="Xóa toàn bộ bộ lọc đang áp dụng"
                   >
-                    <span>
-                      {formattedTime
-                        ? `🕒 Đã sửa: ${formattedTime}`
-                        : '🕒 Chưa có lịch sử chỉnh sửa'}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <button
-                      onClick={() =>
-                        setEditingClient({
-                          ...client,
-                          phone: client.phone || '',
-                          packageNote: cleanNote,
-                          lastModifiedDisplay: formattedTime,
-                          primaryTrainerId: client.primaryTrainerId?._id || client.primaryTrainerId
-                        })
-                      }
-                      className="Btn BtnLight"
-                      style={{ width: '100%' }}
-                    >
-                      {isAdmin ? '✏️ Sửa Lịch / SĐT / Ghi Bài Tập' : '🏋️ Ghi Bài Tập & SĐT Khách'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                    ↺ Đặt lại
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
+
+          {/* DANH SÁCH THẺ KHÁCH HÀNG (ICON VECTOR SVG THEO TRẠNG THÁI & LOẠI KHÁCH) */}
+          {displayedClients.length === 0 ? (
+            <div className="ClientsEmptyBox">
+              <div className="ClientsEmptyIcon">🔎</div>
+              <div className="ClientsEmptyTitle">Không tìm thấy học viên nào phù hợp</div>
+              <div className="ClientsEmptySub">
+                Thử gõ từ khóa ngắn hơn (không cần dấu), kiểm tra lại bộ lọc PT hoặc thứ trong tuần.
+              </div>
+              {hasActiveClientFilters && (
+                <button type="button" onClick={resetClientFilters} className="Btn BtnBlue" style={{ marginTop: '10px' }}>
+                  ↺ Xóa toàn bộ bộ lọc
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="ClientsGridV2">
+              {displayedClients.map(client => {
+                const { cleanNote, updatedAt } = parseClientNoteAndTime(
+                  client.packageNote,
+                  client.updatedAt
+                );
+                const formattedTime = formatUpdateTime(updatedAt);
+                const isActive = client.status === 'ACTIVE';
+                const sortedSlots = [...(client.weeklySchedule || [])].sort(
+                  (a, b) => a.dayOfWeek - b.dayOfWeek
+                );
+                const clientVisual = getClientVisualInfo(client);
+
+                return (
+                  <div
+                    key={client._id}
+                    className={`ClientCardV2 variant-${clientVisual.variant} ${isActive ? 'is-active' : 'is-paused'}`}
+                  >
+                    {/* Header: Icon Vector SVG + Tên + Trạng thái */}
+                    <div className="ClientCardV2Header">
+                      <div className="ClientCardV2Identity">
+                        <span
+                          className={`ClientAvatar variant-${clientVisual.variant}`}
+                          title={clientVisual.label}
+                        >
+                          {clientVisual.renderIcon(18)}
+                        </span>
+                        <div className="ClientNameBlock">
+                          <div className="ClientNameText" title={client.name}>
+                            {client.name}
+                          </div>
+                          <div className="ClientPtLine">
+                            PT: <strong>{client.primaryTrainerId?.name || '—'}</strong>
+                            <span className="ClientSessionDot">•</span>
+                            <span>{sortedSlots.length} buổi/tuần</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <span className={`ClientStatusPill ${isActive ? 'active' : 'paused'}`}>
+                        {isActive ? '● Đang tập' : '⏸ OFF'}
+                      </span>
+                    </div>
+
+                    {/* Thông tin SĐT */}
+                    <div className={`ClientPhoneRow ${client.phone ? 'has-phone' : 'missing-phone'}`}>
+                      <span>📱</span>
+                      {client.phone ? (
+                        <strong>{client.phone}</strong>
+                      ) : (
+                        <span>Chưa cập nhật SĐT</span>
+                      )}
+                    </div>
+
+                    {/* Lịch tập trong tuần */}
+                    <div className="ClientSlotsWrap">
+                      {sortedSlots.length > 0 ? (
+                        sortedSlots.map((slot, idx) => (
+                          <div
+                            key={idx}
+                            className={`ClientSlotChip ${slot.workoutType ? 'has-workout' : ''}`}
+                          >
+                            <span className="SlotDayLabel">
+                              {slot.dayOfWeek === 8 ? 'CN' : `T${slot.dayOfWeek}`}
+                            </span>
+                            <span className="SlotTimeLabel">{slot.time || 'Báo sau'}</span>
+                            {slot.workoutType && (
+                              <span className="SlotWorkoutLabel">{slot.workoutType}</span>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <span className="NoSlotsHint">Chưa xếp buổi tập cố định trong tuần</span>
+                      )}
+                    </div>
+
+                    {cleanNote && (
+                      <div className="ClientNoteChip" title={cleanNote}>
+                        📌 {cleanNote}
+                      </div>
+                    )}
+
+                    {/* Footer gọn: Thời gian sửa + Nút hành động */}
+                    <div className="ClientCardV2Footer">
+                      <span
+                        className={`ClientTimeStamp ${formattedTime ? 'edited' : ''}`}
+                        title={formattedTime ? `Chỉnh sửa lần cuối: ${formattedTime}` : 'Chưa có lịch sử sửa'}
+                      >
+                        🕒 {formattedTime ? formattedTime.replace(' — ', ' • ') : 'Chưa sửa'}
+                      </span>
+
+                      <button
+                        onClick={() =>
+                          setEditingClient({
+                            ...client,
+                            phone: client.phone || '',
+                            packageNote: cleanNote,
+                            lastModifiedDisplay: formattedTime,
+                            primaryTrainerId: client.primaryTrainerId?._id || client.primaryTrainerId
+                          })
+                        }
+                        className="ClientEditBtn"
+                      >
+                        {isAdmin ? '✏️ Sửa lịch / SĐT' : '🏋️ Ghi bài tập'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -1885,6 +2483,7 @@ export default function App() {
             <div className="SummaryCardsGrid">
               {summaryByTrainer.map(({ trainer, totalShifts, totalDoubleShifts, dailyBreakdown }) => {
                 const barPercent = totalShifts > 0 ? Math.max(8, Math.round((totalShifts / maxTrainerShifts) * 100)) : 0;
+                const trainerVisual = getTrainerVisualInfo({ isOff: false, validCount: totalShifts });
 
                 return (
                   <div
@@ -1892,12 +2491,20 @@ export default function App() {
                     className={`SummaryPTCard ${totalShifts === 0 ? 'empty-pt' : ''}`}
                   >
                     <div className="SummaryPTHeader">
-                      <div>
-                        <div className="SummaryPTName">{trainer.name}</div>
-                        <div className="SummaryPTSub">
-                          {dailyBreakdown.length > 0
-                            ? `${dailyBreakdown.length} ngày có ca chốt`
-                            : 'Chưa phát sinh ca chốt'}
+                      <div className="SummaryPTIdentity">
+                        <span
+                          className={`PTAvatar variant-${trainerVisual.variant}`}
+                          title={trainerVisual.label}
+                        >
+                          {trainerVisual.renderIcon(17)}
+                        </span>
+                        <div>
+                          <div className="SummaryPTName">{trainer.name}</div>
+                          <div className="SummaryPTSub">
+                            {dailyBreakdown.length > 0
+                              ? `${dailyBreakdown.length} ngày có ca chốt`
+                              : 'Chưa phát sinh ca chốt'}
+                          </div>
                         </div>
                       </div>
 
